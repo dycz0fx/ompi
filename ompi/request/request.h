@@ -398,10 +398,13 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
  */
 static inline int ompi_request_complete(ompi_request_t* request, bool with_signal)
 {
-    ompi_request_complete_fn_t tmp = request->req_complete_cb;
-    if( NULL != tmp ) {
-        request->req_complete_cb = NULL;
-        tmp( request );
+    //if complete_cb is not null, callback
+    if( !opal_atomic_cmpset_ptr(&request->req_complete_cb, NULL, (void*)1L) ) {
+        if ((long)(request->req_complete_cb) != 1L) {
+            ompi_request_complete_fn_t tmp = request->req_complete_cb;
+            tmp( request );
+            request->req_complete_cb = NULL;
+        }
     }
     ompi_request_completed++;
     request->req_complete = true;
@@ -415,6 +418,17 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
         opal_condition_broadcast(&ompi_request_cond);
     }
     return OMPI_SUCCESS;
+}
+
+static inline int ompi_request_set_callback(ompi_request_t* request,
+                                            ompi_request_complete_fn_t cb,
+                                            void* cb_data)
+{
+    request->req_complete_cb_data = cb_data;
+    long temp = (long)cb;
+    //if complete_cb_data is NULL, set call_back return 1
+    return opal_atomic_cmpset_ptr(&request->req_complete_cb, NULL, (void *)temp);
+    
 }
 
 END_C_DECLS

@@ -52,7 +52,17 @@ ompi_coll_base_topo_build_chain( int fanout,
                                   struct ompi_communicator_t* com,
                                   int root );
 
+ompi_coll_tree_t**
+ompi_coll_base_topo_build_two_trees_binary(struct ompi_communicator_t* comm,
+                                           int root );
+
+ompi_coll_tree_t**
+ompi_coll_base_topo_build_two_trees_binomial(struct ompi_communicator_t* comm,
+                                             int root );
+
 int ompi_coll_base_topo_destroy_tree( ompi_coll_tree_t** tree );
+
+int ompi_coll_base_topo_destroy_two_trees( ompi_coll_tree_t** trees );
 
 /* debugging stuff, will be removed later */
 int ompi_coll_base_topo_dump_tree (ompi_coll_tree_t* tree, int rank);
