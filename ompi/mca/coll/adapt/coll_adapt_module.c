@@ -53,6 +53,7 @@
 #include "ompi/mca/pml/pml.h"
 #include "coll_adapt_algorithms.h"
 
+#define OPAL_HAVE_HWLOC 1
 /*
  * Global variables
  */
@@ -169,7 +170,7 @@ mca_coll_adapt_comm_query(struct ompi_communicator_t *comm, int *priority)
     adapt_module->super.coll_allgatherv = NULL;
     adapt_module->super.coll_allreduce  = mca_coll_adapt_allreduce;
     adapt_module->super.coll_alltoall   = NULL;
-    adapt_module->super.coll_alltoallv  = NULL;
+    adapt_module->super.coll_alltoallv  = mca_coll_adapt_alltoallv;
     adapt_module->super.coll_alltoallw  = NULL;
     adapt_module->super.coll_barrier    = NULL;
     adapt_module->super.coll_bcast      = mca_coll_adapt_bcast;
@@ -183,6 +184,7 @@ mca_coll_adapt_comm_query(struct ompi_communicator_t *comm, int *priority)
     adapt_module->super.coll_scatterv   = NULL;
     adapt_module->super.coll_ibcast     = mca_coll_adapt_ibcast;
     adapt_module->super.coll_ireduce    = mca_coll_adapt_ireduce;
+    adapt_module->super.coll_ialltoallv = mca_coll_adapt_ialltoallv;
     //adapt_module->super.coll_iallreduce = mca_coll_adapt_iallreduce;
 
     opal_output_verbose(10, ompi_coll_base_framework.framework_output,
@@ -205,7 +207,7 @@ static int adapt_module_enable(mca_coll_base_module_t *module,
 int ompi_coll_adapt_lazy_enable(mca_coll_base_module_t *module,
                              struct ompi_communicator_t *comm)
 {
-    int j = 0, ret;
+    int ret;
     int rank = ompi_comm_rank(comm);
     int size = ompi_comm_size(comm);
     mca_coll_adapt_module_t *adapt_module = (mca_coll_adapt_module_t*) module;
@@ -250,6 +252,7 @@ int ompi_coll_adapt_lazy_enable(mca_coll_base_module_t *module,
 #if OPAL_HAVE_HWLOC
     /* Setup memory affinity so that the pages that belong to this
        process are local to this process */
+    int j=0;
     opal_hwloc_base_memory_set(maffinity, j);
     free(maffinity);
 #endif

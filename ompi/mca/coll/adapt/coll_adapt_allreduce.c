@@ -19,7 +19,7 @@
 
 //TODO: add more error handler
 
-int mca_coll_adapt_allreduce_intra_nonoverlapping(void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_allreduce_intra_nonoverlapping(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     //printf("In adapt allreduce_intra_nonoverlapping\n");
     int err, rank;
     rank = ompi_comm_rank(comm);
@@ -319,7 +319,7 @@ static int recv_cb(ompi_request_t *req){
     return MPI_SUCCESS;
 }
 
-int mca_coll_adapt_allreduce_intra_recursivedoubling(void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     //printf("In adapt allreduce_intra_recursivedoubling\n");
     ptrdiff_t extent, lower_bound, true_lower_bound, true_extent;
     int size, rank, adjsize, extra_ranks;
@@ -553,7 +553,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(void *sbuf, void *rbuf, int
     return MPI_SUCCESS;
 }
 
-int mca_coll_adapt_allreduce(void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_allreduce(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     return mca_coll_adapt_allreduce_intra_recursivedoubling(sbuf, rbuf, count, dtype, op, comm, module);
 }
 
