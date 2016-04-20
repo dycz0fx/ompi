@@ -58,6 +58,7 @@
 #include "opal/mca/rcache/base/base.h"
 #include "opal/mca/rcache/rcache.h"
 #include "opal/mca/mpool/base/base.h"
+#include "opal/mca/btl/base/base.h"
 #include "opal/mca/pmix/pmix.h"
 #include "opal/util/timings.h"
 
@@ -98,15 +99,13 @@
 #endif
 #include "ompi/runtime/ompi_cr.h"
 
-#if defined(MEMORY_LINUX_PTMALLOC2) && MEMORY_LINUX_PTMALLOC2
-#include "opal/mca/memory/linux/memory_linux.h"
+#include "opal/mca/memory/base/base.h"
 /* So this sucks, but with OPAL in its own library that is brought in
    implicity from libmpi, there are times when the malloc initialize
    hook in the memory component doesn't work.  So we have to do it
    from here, since any MPI code is going to call MPI_Init... */
 OPAL_DECLSPEC void (*__malloc_initialize_hook) (void) =
-    opal_memory_linux_malloc_init_hook;
-#endif /* defined(MEMORY_LINUX_PTMALLOC2) && MEMORY_LINUX_PTMALLOC2 */
+    opal_memory_base_malloc_init_hook;
 
 /* This is required for the boundaries of the hash tables used to store
  * the F90 types returned by the MPI_Type_create_f90_XXX functions.
@@ -597,6 +596,10 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided)
     }
     if (OMPI_SUCCESS != (ret = mca_base_framework_open(&ompi_bml_base_framework, 0))) {
         error = "mca_bml_base_open() failed";
+        goto error;
+    }
+    if (OMPI_SUCCESS != (ret = mca_bml_base_init (1, ompi_mpi_thread_multiple))) {
+        error = "mca_bml_base_init() failed";
         goto error;
     }
     if (OMPI_SUCCESS != (ret = mca_base_framework_open(&ompi_pml_base_framework, 0))) {

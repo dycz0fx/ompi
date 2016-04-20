@@ -182,6 +182,7 @@ static int btl_openib_component_open(void)
 
     /* initialize state */
     mca_btl_openib_component.ib_num_btls = 0;
+    mca_btl_openib_component.num_default_gid_btls = 0;
     mca_btl_openib_component.openib_btls = NULL;
     OBJ_CONSTRUCT(&mca_btl_openib_component.devices, opal_pointer_array_t);
     mca_btl_openib_component.devices_count = 0;
@@ -688,11 +689,15 @@ static int init_one_port(opal_list_t *btl_list, mca_btl_openib_device_t *device,
                  ibv_get_device_name(device->ib_dev), port_num, subnet_id));
 #endif
 
-    if(mca_btl_openib_component.ib_num_btls > 0 &&
+    if(mca_btl_openib_component.num_default_gid_btls > 0 &&
             IB_DEFAULT_GID_PREFIX == subnet_id &&
             mca_btl_openib_component.warn_default_gid_prefix) {
         opal_show_help("help-mpi-btl-openib.txt", "default subnet prefix",
                 true, opal_process_info.nodename);
+    }
+
+    if (IB_DEFAULT_GID_PREFIX == subnet_id) {
+        mca_btl_openib_component.num_default_gid_btls++;
     }
 
     lmc = (1 << ib_port_attr->lmc);
@@ -2557,39 +2562,6 @@ btl_openib_component_init(int *num_btl_modules,
         goto no_btls;
     }
 
-    /* If we are using ptmalloc2 and there are no posix threads
-       available, this will cause memory corruption.  Refuse to run.
-       Right now, ptmalloc2 is the only memory manager that we have on
-       OS's that support OpenFabrics that provide both FREE and MUNMAP
-       support, so the following test is [currently] good enough... */
-    value = opal_mem_hooks_support_level();
-
-    /* If we have a memory manager available, and
-       opal_leave_pinned==-1, then unless the user explicitly set
-       opal_leave_pinned_pipeline==0, then set opal_leave_pinned to 1.
-
-       We have a memory manager if we have both FREE and MUNMAP
-       support */
-    if ((OPAL_MEMORY_FREE_SUPPORT | OPAL_MEMORY_MUNMAP_SUPPORT) ==
-        ((OPAL_MEMORY_FREE_SUPPORT | OPAL_MEMORY_MUNMAP_SUPPORT) & value)) {
-        if (0 == opal_leave_pinned_pipeline &&
-            -1 == opal_leave_pinned) {
-            opal_leave_pinned = 1;
-        }
-    } else {
-        opal_leave_pinned = 0;
-        opal_leave_pinned_pipeline = 0;
-    }
-
-#if OPAL_CUDA_SUPPORT
-    if (mca_btl_openib_component.cuda_want_gdr && (0 == opal_leave_pinned)) {
-        opal_show_help("help-mpi-btl-openib.txt",
-                       "CUDA_gdr_and_nopinned", true,
-                       opal_process_info.nodename);
-        goto no_btls;
-    }
-#endif /* OPAL_CUDA_SUPPORT */
-
     index = mca_base_var_find("ompi", "btl", "openib", "max_inline_data");
     if (index >= 0) {
         if (OPAL_SUCCESS == mca_base_var_get_value(index, NULL, &source, NULL)) {
@@ -2925,6 +2897,22 @@ btl_openib_component_init(int *num_btl_modules,
         opal_argv_free(mca_btl_openib_component.if_exclude_list);
         mca_btl_openib_component.if_exclude_list = NULL;
     }
+
+    /* If we are using ptmalloc2 and there are no posix threads
+       available, this will cause memory corruption.  Refuse to run.
+       Right now, ptmalloc2 is the only memory manager that we have on
+       OS's that support OpenFabrics that provide both FREE and MUNMAP
+       support, so the following test is [currently] good enough... */
+    value = opal_mem_hooks_support_level();
+
+#if OPAL_CUDA_SUPPORT
+   if (mca_btl_openib_component.cuda_want_gdr && (0 == opal_leave_pinned)) {
+        opal_show_help("help-mpi-btl-openib.txt",
+                       "CUDA_gdr_and_nopinned", true,
+                       opal_process_info.nodename);
+        goto no_btls;
+    }
+#endif /* OPAL_CUDA_SUPPORT */
 
     mca_btl_openib_component.memory_registration_verbose = opal_output_open(NULL);
     opal_output_set_verbosity (mca_btl_openib_component.memory_registration_verbose,
