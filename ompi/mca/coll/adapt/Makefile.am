@@ -14,13 +14,17 @@ dist_ompidata_DATA = help-mpi-coll-adapt.txt
 sources = \
 	coll_adapt_component.c \
 	coll_adapt_module.c \
-        coll_adapt_bcast.c \
+    coll_adapt_bcast.c \
 	coll_adapt_ibcast.c \
 	coll_adapt_reduce.c \
 	coll_adapt_ireduce.c \
 	coll_adapt_allreduce.c \
 	coll_adapt_iallreduce.c \
-        coll_adapt.h \
+	coll_adapt_alltoall.c \
+	coll_adapt_ialltoall.c \
+	coll_adapt_alltoallv.c \
+	coll_adapt_ialltoallv.c \
+    coll_adapt.h \
 	coll_adapt_algorithms.h \
 	coll_adapt_context.h \
 	coll_adapt_context.c \

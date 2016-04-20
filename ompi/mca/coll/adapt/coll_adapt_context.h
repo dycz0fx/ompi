@@ -282,7 +282,6 @@ struct mca_coll_adapt_constant_allreduce_context_s {
     int extra_ranks;
     opal_free_list_t *inbuf_list;
     int complete;
-    opal_mutex_t * mutex_sendbuf;
     int adjsize;
     int sendbuf_ready;
     int inbuf_ready;
@@ -306,4 +305,48 @@ struct mca_coll_adapt_allreduce_context_s {
 typedef struct mca_coll_adapt_allreduce_context_s mca_coll_adapt_allreduce_context_t;
 
 OBJ_CLASS_DECLARATION(mca_coll_adapt_allreduce_context_t);
+
+/* alltoallv constant context in alltoallv context */
+struct mca_coll_adapt_constant_alltoallv_context_s {
+    opal_object_t  super;
+    char *sbuf;
+    const int* scounts;
+    const int* sdisps;
+    ompi_datatype_t * sdtype;
+    char *rbuf;
+    const int* rcounts;
+    const int* rdisps;
+    ompi_datatype_t * rdtype;
+    ompi_communicator_t * comm;
+    ompi_request_t * request;
+    opal_free_list_t * context_list;
+    ptrdiff_t sext;
+    ptrdiff_t rext;
+    const char *origin_sbuf;
+    int finished_send;
+    int finished_recv;
+    int ongoing_send;
+    int ongoing_recv;
+    int complete;
+    int next_send_distance;
+    int next_recv_distance;
+};
+
+typedef struct mca_coll_adapt_constant_alltoallv_context_s mca_coll_adapt_constant_alltoallv_context_t;
+
+OBJ_CLASS_DECLARATION(mca_coll_adapt_constant_alltoallv_context_t);
+
+
+//alltoallv context
+struct mca_coll_adapt_alltoallv_context_s {
+    opal_free_list_item_t super;
+    int distance;      //distance for recursive doubleing
+    int peer;
+    char *start;         //point to send or recv from which address
+    mca_coll_adapt_constant_alltoallv_context_t * con;
+};
+
+typedef struct mca_coll_adapt_alltoallv_context_s mca_coll_adapt_alltoallv_context_t;
+
+OBJ_CLASS_DECLARATION(mca_coll_adapt_alltoallv_context_t);
 
