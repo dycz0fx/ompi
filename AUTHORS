@@ -1,7 +1,7 @@
 Open MPI Authors
 ================
 
-The following cumulative list contains the names and Subversion IDs of
+The following cumulative list contains the names and email addresses of
 all individuals who have committed code to the Open MPI repository.
 
 Email                           Name                        Affiliation(s)
@@ -43,6 +43,7 @@ gef@icl.utk.edu                 Graham Fagg                 UTK
 gilles@rist.or.jp               Gilles Gouaillardet         RIST
 gingery@lanl.gov                Ginger Young                LANL
 gleb@voltaire.com               Gleb Natapov                Voltaire
+gpaulsen@us.ibm.com             Geoffrey Paulsen            IBM
 gshipman@lanl.gov               Galen Shipman               LANL
 gwatson@lanl.gov                Greg Watson                 LANL
 herault@icl.utk.edu             Thomas Herault              INRIA
@@ -67,6 +68,7 @@ lemarini@icl.utk.edu            Pierre Lemarinier           UTK
 lennyb@voltaire.com             Lenny Verkhovsky            Mellanox
 lums@cs.indiana.edu             Andrew Lumsdaine            IU
 manjugv@ornl.gov                Manjunath Gorentla Venkata  ORNL
+mark.santcroos@rutgers.edu      Mark Santcroos              Rutgers Univ.
 matneykdsr@ornl.gov             Ken Matney                  ORNL
 matthias.jurenz@tu-dresden.de   Matthias Jurenz             ZIH
 miked@mellanox.com              Mike Dubman                 Mellanox
