@@ -311,7 +311,7 @@ static inline void mca_btl_tcp_endpoint_event_init(mca_btl_base_endpoint_t* btl_
      */
     opal_event_set(mca_btl_tcp_event_base, &btl_endpoint->endpoint_send_event,
                     btl_endpoint->endpoint_sd,
-                    OPAL_EV_WRITE,
+                    OPAL_EV_WRITE|OPAL_EV_PERSIST,
                     mca_btl_tcp_endpoint_send_handler,
                     btl_endpoint);
 }
@@ -850,8 +850,9 @@ static void mca_btl_tcp_endpoint_recv_handler(int sd, short flags, void* user)
      * If we can't lock this mutex, it is OK to cancel the receive operation, it
      * will be eventually triggered again shorthly.
      */
-    if( OPAL_THREAD_TRYLOCK(&btl_endpoint->endpoint_recv_lock) )
+    if( OPAL_THREAD_TRYLOCK(&btl_endpoint->endpoint_recv_lock) ){
         return;
+    }
 
     switch(btl_endpoint->endpoint_state) {
     case MCA_BTL_TCP_CONNECT_ACK:
@@ -947,9 +948,9 @@ static void mca_btl_tcp_endpoint_send_handler(int sd, short flags, void* user)
     mca_btl_tcp_endpoint_t* btl_endpoint = (mca_btl_tcp_endpoint_t *)user;
 
     /* if another thread is already here, give up */
-    if( OPAL_THREAD_TRYLOCK(&btl_endpoint->endpoint_send_lock) )
+    if( OPAL_THREAD_TRYLOCK(&btl_endpoint->endpoint_send_lock) ){
         return;
-
+    }
     switch(btl_endpoint->endpoint_state) {
     case MCA_BTL_TCP_CONNECTING:
         mca_btl_tcp_endpoint_complete_connect(btl_endpoint);
