@@ -310,11 +310,7 @@ static inline void mca_btl_tcp_endpoint_event_init(mca_btl_base_endpoint_t* btl_
      */
     opal_event_set(mca_btl_tcp_event_base, &btl_endpoint->endpoint_send_event,
                     btl_endpoint->endpoint_sd,
-<<<<<<< HEAD
-                    OPAL_EV_WRITE|OPAL_EV_PERSIST,
-=======
                     OPAL_EV_WRITE | OPAL_EV_PERSIST,
->>>>>>> upstream/master
                     mca_btl_tcp_endpoint_send_handler,
                     btl_endpoint);
 }
