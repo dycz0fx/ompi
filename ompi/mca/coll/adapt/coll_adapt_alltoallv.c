@@ -72,7 +72,9 @@ static int send_cb(ompi_request_t *req){
             OBJ_RELEASE(context->con);
             opal_free_list_return(temp, (opal_free_list_item_t*)context);
             OBJ_RELEASE(temp);
+            OPAL_THREAD_LOCK(&ompi_request_lock);
             ompi_request_complete(temp_req, 1);
+            OPAL_THREAD_UNLOCK(&ompi_request_lock);
             return 1;
         }
     }
@@ -135,7 +137,9 @@ static int recv_cb(ompi_request_t *req){
             OBJ_RELEASE(context->con);
             opal_free_list_return(temp, (opal_free_list_item_t*)context);
             OBJ_RELEASE(temp);
+            OPAL_THREAD_LOCK(&ompi_request_lock);
             ompi_request_complete(temp_req, 1);
+            OPAL_THREAD_UNLOCK(&ompi_request_lock);
             return 1;
         }
     }

@@ -827,7 +827,7 @@ int mca_coll_adapt_ibcast_two_trees_generic(void *buff, int count, struct ompi_d
     con->trees = trees;
     con->complete = 0;
     
-    OPAL_THREAD_LOCK(mutex);
+    opal_mutex_lock(mutex);
     //printf("[%d, %" PRIx64 "]: IBcast, root %d\n", rank, gettid(), root);
     //printf("[%d, %" PRIx64 "]: con->mutex = %p\n", rank, gettid(), (void *)con->mutex);
     //if root, send segment to the roots of two trees.
@@ -890,9 +890,9 @@ int mca_coll_adapt_ibcast_two_trees_generic(void *buff, int count, struct ompi_d
                     }
                     //invoke send call back
                     if(!ompi_request_set_callback(send_req, two_trees_send_cb, context)) {
-                        OPAL_THREAD_UNLOCK(mutex);
+                        opal_mutex_unlock(mutex);
                         two_trees_send_cb(send_req);
-                        OPAL_THREAD_LOCK(mutex);
+                        opal_mutex_lock(mutex);
                     }
                     
                 }
@@ -958,9 +958,9 @@ int mca_coll_adapt_ibcast_two_trees_generic(void *buff, int count, struct ompi_d
                 }
                 //invoke receive call back
                 if(!ompi_request_set_callback(recv_req, two_trees_recv_cb, context)) {
-                    OPAL_THREAD_UNLOCK(mutex);
+                    opal_mutex_unlock(mutex);
                     two_trees_recv_cb(recv_req);
-                    OPAL_THREAD_LOCK(mutex);
+                    opal_mutex_lock(mutex);
                     
                 }
             }
@@ -971,7 +971,7 @@ int mca_coll_adapt_ibcast_two_trees_generic(void *buff, int count, struct ompi_d
     //printf("[%d, %" PRIx64 "]: End of ibcast\n", rank, gettid());
     
     
-    OPAL_THREAD_UNLOCK(mutex);
+    opal_mutex_unlock(mutex);
     
     
     return MPI_SUCCESS;

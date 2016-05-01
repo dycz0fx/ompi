@@ -391,9 +391,9 @@ int mca_coll_adapt_bcast_generic(void *buff, int count, struct ompi_datatype_t *
                 }
                 //invoke send call back
                 if(!ompi_request_set_callback(send_req, send_cb, context)) {
-                    OPAL_THREAD_UNLOCK(mutex);
+                    opal_mutex_unlock(mutex);
                     send_cb(send_req);
-                    OPAL_THREAD_LOCK(mutex);
+                    opal_mutex_lock(mutex);
                 }
                 
             }
@@ -448,9 +448,9 @@ int mca_coll_adapt_bcast_generic(void *buff, int count, struct ompi_datatype_t *
             }
             //invoke receive call back
             if(!ompi_request_set_callback(recv_req, recv_cb, context)) {
-                OPAL_THREAD_UNLOCK(mutex);
+                opal_mutex_unlock(mutex);
                 recv_cb(recv_req);
-                OPAL_THREAD_LOCK(mutex);
+                opal_mutex_lock(mutex);
                 
             }
         }
@@ -821,9 +821,9 @@ int mca_coll_adapt_bcast_two_trees_generic(void *buff, int count, struct ompi_da
                     }
                     //invoke send call back
                     if(!ompi_request_set_callback(send_req, two_trees_send_cb, context)) {
-                        OPAL_THREAD_UNLOCK(mutex);
+                        opal_mutex_unlock(mutex);
                         two_trees_send_cb(send_req);
-                        OPAL_THREAD_LOCK(mutex);
+                        opal_mutex_lock(mutex);
                     }
                     
                 }
@@ -892,9 +892,9 @@ int mca_coll_adapt_bcast_two_trees_generic(void *buff, int count, struct ompi_da
                 }
                 //invoke receive call back
                 if(!ompi_request_set_callback(recv_req, two_trees_recv_cb, context)) {
-                    OPAL_THREAD_UNLOCK(mutex);
+                    opal_mutex_unlock(mutex);
                     two_trees_recv_cb(recv_req);
-                    OPAL_THREAD_LOCK(mutex);
+                    opal_mutex_lock(mutex);
                     
                 }
             }
