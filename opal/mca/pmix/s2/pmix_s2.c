@@ -5,7 +5,7 @@
  * Copyright (c) 2011      Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2011-2013 Los Alamos National Security, LLC. All
  *                         rights reserved.
- * Copyright (c) 2013-2015 Intel, Inc.  All rights reserved.
+ * Copyright (c) 2013-2016 Intel, Inc.  All rights reserved.
  * Copyright (c) 2014-2015 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * $COPYRIGHT$
@@ -43,7 +43,8 @@ static int s2_initialized(void);
 static int s2_abort(int flag, const char msg[],
                     opal_list_t *procs);
 static int s2_commit(void);
-static int s2_fence(opal_list_t *procs, int collect_data);
+static int s2_fencenb(opal_list_t *procs, int collect_data,
+                      opal_pmix_op_cbfunc_t cbfunc, void *cbdata);
 static int s2_put(opal_pmix_scope_t scope,
                   opal_value_t *kv);
 static int s2_get(const opal_process_name_t *id,
@@ -66,7 +67,7 @@ const opal_pmix_base_module_t opal_pmix_s2_module = {
     .initialized = s2_initialized,
     .abort = s2_abort,
     .commit = s2_commit,
-    .fence = s2_fence,
+    .fence_nb = s2_fencenb,
     .put = s2_put,
     .get = s2_get,
     .publish = s2_publish,
@@ -84,6 +85,17 @@ const opal_pmix_base_module_t opal_pmix_s2_module = {
 
 // usage accounting
 static int pmix_init_count = 0;
+
+// local object
+typedef struct {
+    opal_object_t super;
+    opal_event_t ev;
+    opal_pmix_op_cbfunc_t opcbfunc;
+    void *cbdata;
+} pmi_opcaddy_t;
+OBJ_CLASS_INSTANCE(pmi_opcaddy_t,
+                   opal_object_t,
+                   NULL, NULL);
 
 // PMI constant values:
 static int pmix_kvslen_max = 0;
@@ -270,6 +282,17 @@ static int s2_init(void)
     kv.data.uint32 = atoi(buf);
     if (OPAL_SUCCESS != (rc = opal_pmix_base_store(&OPAL_PROC_MY_NAME, &kv))) {
         OPAL_ERROR_LOG(rc);
+        OBJ_DESTRUCT(&kv);
+        goto err_exit;
+    }
+    OBJ_DESTRUCT(&kv);
+    /* push this into the dstore for subsequent fetches */
+    OBJ_CONSTRUCT(&kv, opal_value_t);
+    kv.key = strdup(OPAL_PMIX_MAX_PROCS);
+    kv.type = OPAL_UINT32;
+    kv.data.uint32 = atoi(buf);
+    if (OPAL_SUCCESS != (ret = opal_pmix_base_store(&OPAL_PROC_MY_NAME, &kv))) {
+        OPAL_ERROR_LOG(ret);
         OBJ_DESTRUCT(&kv);
         goto err_exit;
     }
@@ -519,8 +542,9 @@ static int s2_commit(void)
     return OPAL_SUCCESS;
 }
 
-static int s2_fence(opal_list_t *procs, int collect_data)
+static void fencenb(int sd, short args, void *cbdata)
 {
+    pmi_opcaddy_t *op = (pmi_opcaddy_t*)cbdata;
     int rc;
     int32_t i;
     opal_value_t *kp, kvn;
@@ -538,7 +562,8 @@ static int s2_fence(opal_list_t *procs, int collect_data)
 
     /* now call fence */
     if (PMI2_SUCCESS != PMI2_KVS_Fence()) {
-        return OPAL_ERROR;
+        rc = OPAL_ERROR;
+        goto cleanup;
     }
 
     /* get the modex data from each local process and set the
@@ -555,7 +580,7 @@ static int s2_fence(opal_list_t *procs, int collect_data)
                                                    &kp, pmix_kvs_name, pmix_vallen_max, kvs_get);
             if (OPAL_SUCCESS != rc) {
                 OPAL_ERROR_LOG(rc);
-                return rc;
+                goto cleanup;
             }
             if (NULL == kp || NULL == kp->data.string) {
                 /* if we share a node, but we don't know anything more, then
@@ -585,6 +610,27 @@ static int s2_fence(opal_list_t *procs, int collect_data)
             OBJ_DESTRUCT(&kvn);
         }
     }
+
+  cleanup:
+    if (NULL != op->opcbfunc) {
+      op->opcbfunc(rc, op->cbdata);
+    }
+    OBJ_RELEASE(op);
+    return;
+}
+
+static int s2_fencenb(opal_list_t *procs, int collect_data,
+                    opal_pmix_op_cbfunc_t cbfunc, void *cbdata)
+{
+    pmi_opcaddy_t *op;
+
+    /* thread-shift this so we don't block in SLURM's barrier */
+    op = OBJ_NEW(pmi_opcaddy_t);
+    op->opcbfunc = cbfunc;
+    op->cbdata = cbdata;
+    event_assign(&op->ev, opal_pmix_base.evbase, -1,
+                 EV_WRITE, fencenb, op);
+    event_active(&op->ev, EV_WRITE, 1);
 
     return OPAL_SUCCESS;
 }

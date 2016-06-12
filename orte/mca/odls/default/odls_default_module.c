@@ -11,7 +11,7 @@
  *                         All rights reserved.
  * Copyright (c) 2007-2010 Oracle and/or its affiliates.  All rights reserved.
  * Copyright (c) 2007      Evergrid, Inc. All rights reserved.
- * Copyright (c) 2008-2015 Cisco Systems, Inc.  All rights reserved.
+ * Copyright (c) 2008-2016 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2010      IBM Corporation.  All rights reserved.
  * Copyright (c) 2011-2013 Los Alamos National Security, LLC.  All rights
  *                         reserved.
@@ -164,71 +164,6 @@ orte_odls_base_module_t orte_odls_default_module = {
 };
 
 
-static bool odls_default_child_died(orte_proc_t *child)
-{
-    time_t end;
-    pid_t ret;
-
-    /* Because of rounding in time (which returns whole seconds) we
-     * have to add 1 to our wait number: this means that we wait
-     * somewhere between (target) and (target)+1 seconds.  Otherwise,
-     * the default 1s actually means 'somwhere between 0 and 1s'. */
-    end = time(NULL) + orte_odls_globals.timeout_before_sigkill + 1;
-    do {
-        OPAL_OUTPUT_VERBOSE((20, orte_odls_base_framework.framework_output,
-                             "%s odls:default:WAITPID CHECKING PID %d WITH TIMEOUT %d SECONDS",
-                             ORTE_NAME_PRINT(ORTE_PROC_MY_NAME), (int)(child->pid),
-                             orte_odls_globals.timeout_before_sigkill + 1));
-        ret = waitpid(child->pid, &child->exit_code, WNOHANG);
-        if (child->pid == ret) {
-            OPAL_OUTPUT_VERBOSE((20, orte_odls_base_framework.framework_output,
-                                 "%s odls:default:WAITPID INDICATES PROC %d IS DEAD",
-                                 ORTE_NAME_PRINT(ORTE_PROC_MY_NAME), (int)(child->pid)));
-            /* It died -- return success */
-            return true;
-        } else if (0 == ret) {
-            /* with NOHANG specified, if a process has already exited
-             * while waitpid was registered, then waitpid returns 0
-             * as there is no error - this is a race condition problem
-             * that occasionally causes us to incorrectly report a proc
-             * as refusing to die. Unfortunately, errno may not be reset
-             * by waitpid in this case, so we cannot check it.
-             *
-             * (note the previous fix to this, to return 'process dead'
-             * here, fixes the race condition at the cost of reporting
-             * all live processes have immediately died!  Better to
-             * occasionally report a dead process as still living -
-             * which will occasionally trip the timeout for cases that
-             * are right on the edge.)
-             */
-            OPAL_OUTPUT_VERBOSE((20, orte_odls_base_framework.framework_output,
-                                 "%s odls:default:WAITPID INDICATES PID %d MAY HAVE ALREADY EXITED",
-                                 ORTE_NAME_PRINT(ORTE_PROC_MY_NAME), (int)(child->pid)));
-            /* Do nothing, process still alive */
-        } else if (-1 == ret && ECHILD == errno) {
-            /* The pid no longer exists, so we'll call this "good
-               enough for government work" */
-            OPAL_OUTPUT_VERBOSE((20, orte_odls_base_framework.framework_output,
-                                 "%s odls:default:WAITPID INDICATES PID %d NO LONGER EXISTS",
-                                 ORTE_NAME_PRINT(ORTE_PROC_MY_NAME), (int)(child->pid)));
-            return true;
-        }
-
-        /* Bogus delay for 1 msec - let's actually give the CPU some time
-         * to quit the other process (sched_yield() -- even if we have it
-         * -- changed behavior in 2.6.3x Linux flavors to be undesirable)
-         * Don't use select on a bogus file descriptor here as it has proven
-         * unreliable and sometimes immediately returns - we really, really
-         * -do- want to wait a bit!
-         */
-        usleep(1000);
-    } while (time(NULL) < end);
-
-    /* The child didn't die, so return false */
-    return false;
-}
-
-
 /* deliver a signal to a specified pid. */
 static int odls_default_kill_local(pid_t pid, int signum)
 {
@@ -251,7 +186,7 @@ int orte_odls_default_kill_local_procs(opal_pointer_array_t *procs)
     int rc;
 
     if (ORTE_SUCCESS != (rc = orte_odls_base_default_kill_local_procs(procs,
-                                    odls_default_kill_local, odls_default_child_died))) {
+                                            odls_default_kill_local))) {
         ORTE_ERROR_LOG(rc);
         return rc;
     }
@@ -478,17 +413,6 @@ static int do_child(orte_app_context_t* context,
     sigprocmask(SIG_UNBLOCK, &sigs, 0);
 
     /* Exec the new executable */
-
-    if (10 < opal_output_get_verbosity(orte_odls_base_framework.framework_output)) {
-        int jout;
-        opal_output(0, "%s STARTING %s", ORTE_NAME_PRINT(ORTE_PROC_MY_NAME), context->app);
-        for (jout=0; NULL != context->argv[jout]; jout++) {
-            opal_output(0, "%s\tARGV[%d]: %s", ORTE_NAME_PRINT(ORTE_PROC_MY_NAME), jout, context->argv[jout]);
-        }
-        for (jout=0; NULL != environ_copy[jout]; jout++) {
-            opal_output(0, "%s\tENVIRON[%d]: %s", ORTE_NAME_PRINT(ORTE_PROC_MY_NAME), jout, environ_copy[jout]);
-        }
-    }
 
     execve(context->app, context->argv, environ_copy);
     send_error_show_help(write_fd, 1,

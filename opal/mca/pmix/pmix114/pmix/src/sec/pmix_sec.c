@@ -3,7 +3,7 @@
  * Copyright (c) 2015      Intel, Inc.  All rights reserved.
  * Copyright (c) 2016      Mellanox Technologies, Inc.
  *                         All rights reserved.
- *
+ * Copyright (c) 2016      IBM Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -14,7 +14,7 @@
 #include <src/include/pmix_config.h>
 
 #include <src/include/types.h>
-#include <src/include/pmix_stdint.h>
+#include <pmix/autogen/pmix_stdint.h>
 
 #include <pmix/pmix_common.h>
 #include "src/include/pmix_globals.h"
@@ -45,7 +45,7 @@
 #include "pmix_sec.h"
 
 #include "src/sec/pmix_native.h"
-#if PMIX_HAVE_MUNGE
+#if PMIX_WANT_MUNGE
 #include "src/sec/pmix_munge.h"
 #endif
 #
@@ -61,12 +61,9 @@
 #define PMIX_SEC_NAVAIL  3
 
 static pmix_sec_base_module_t *all[] = {
-#if PMIX_HAVE_MUNGE
-    /* Start the array with the least heavy option, if available */
+#if PMIX_WANT_MUNGE
     &pmix_munge_module,
 #endif
-
-    /* Our native module should always be the lowest priority */
     &pmix_native_module,
 
     /* Always end the array with a NULL */

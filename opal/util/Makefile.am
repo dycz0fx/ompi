@@ -14,6 +14,8 @@
 # Copyright (c) 2013      Intel, Inc. All rights reserved
 # Copyright (c) 2016      Los Alamos National Security, LLC. All rights
 #                         reserved.
+# Copyright (c) 2016      Research Organization for Information Science
+#                         and Technology (RIST). All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
@@ -43,6 +45,7 @@ headers = \
         cmd_line.h \
         crc.h \
         daemon_init.h \
+	ethtool.h \
         error.h \
         fd.h \
         few.h \
@@ -78,6 +81,7 @@ libopalutil_la_SOURCES = \
         cmd_line.c \
         crc.c \
         daemon_init.c \
+	ethtool.c \
         error.c \
         fd.c \
         few.c \
@@ -118,3 +122,6 @@ if WANT_INSTALL_HEADERS
 opaldir = $(opalincludedir)/$(subdir)
 opal_HEADERS = $(headers)
 endif
+
+maintainer-clean-local:
+	rm -f show_help_lex.c

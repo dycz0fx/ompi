@@ -12,7 +12,8 @@
  * Copyright (c) 2006      Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2007-2013 Los Alamos National Security, LLC.  All rights
  *                         reserved.
- * Copyright (c) 2014-2015 Intel, Inc. All rights reserved.
+ * Copyright (c) 2014-2016 Intel, Inc. All rights reserved.
+ * Copyright (c) 2016      IBM Corporation.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -92,7 +93,7 @@ char **pmix_environ_merge(char **minor, char **major)
  * Portable version of setenv(), allowing editing of any environ-like
  * array
  */
-int pmix_setenv(const char *name, const char *value, bool overwrite,
+ pmix_status_t pmix_setenv(const char *name, const char *value, bool overwrite,
                 char ***env)
 {
     int i;
@@ -102,11 +103,11 @@ int pmix_setenv(const char *name, const char *value, bool overwrite,
     /* Make the new value */
 
     if (NULL == value) {
-        asprintf(&newvalue, "%s=", name);
+        i = asprintf(&newvalue, "%s=", name);
     } else {
-        asprintf(&newvalue, "%s=%s", name, value);
+        i = asprintf(&newvalue, "%s=%s", name, value);
     }
-    if (NULL == newvalue) {
+    if (NULL == newvalue || 0 > i) {
         return PMIX_ERR_OUT_OF_RESOURCE;
     }
 
@@ -134,8 +135,8 @@ int pmix_setenv(const char *name, const char *value, bool overwrite,
 
     /* Make something easy to compare to */
 
-    asprintf(&compare, "%s=", name);
-    if (NULL == compare) {
+    i = asprintf(&compare, "%s=", name);
+    if (NULL == compare || 0 > i) {
         free(newvalue);
         return PMIX_ERR_OUT_OF_RESOURCE;
     }
@@ -175,7 +176,7 @@ int pmix_setenv(const char *name, const char *value, bool overwrite,
  * Portable version of unsetenv(), allowing editing of any
  * environ-like array
  */
-int pmix_unsetenv(const char *name, char ***env)
+ pmix_status_t pmix_unsetenv(const char *name, char ***env)
 {
     int i;
     char *compare;
@@ -190,8 +191,8 @@ int pmix_unsetenv(const char *name, char ***env)
 
     /* Make something easy to compare to */
 
-    asprintf(&compare, "%s=", name);
-    if (NULL == compare) {
+    i = asprintf(&compare, "%s=", name);
+    if (NULL == compare || 0 > i) {
         return PMIX_ERR_OUT_OF_RESOURCE;
     }
     len = strlen(compare);

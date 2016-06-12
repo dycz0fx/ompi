@@ -9,9 +9,10 @@
  *                         University of Stuttgart.  All rights reserved.
  * Copyright (c) 2004-2005 The Regents of the University of California.
  *                         All rights reserved.
- * Copyright (c) 2008-2015 University of Houston. All rights reserved.
+ * Copyright (c) 2008-2016 University of Houston. All rights reserved.
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2016 Cisco Systems, Inc.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -504,6 +505,8 @@ mca_io_ompio_file_preallocate (ompi_file_t *fh,
             buf = NULL;
         }
     }
+    ret = data->ompio_fh.f_fs->fs_file_set_size (&data->ompio_fh, diskspace);
+
     fh->f_comm->c_coll.coll_barrier (fh->f_comm,
                                      fh->f_comm->c_coll.coll_barrier_module);
     return ret;
@@ -600,14 +603,14 @@ int mca_io_ompio_file_get_info (ompi_file_t *fh,
     int ret = OMPI_SUCCESS;
     ompi_info_t *info=NULL;
 
-    if ( MPI_INFO_NULL == fh->f_info  ) {
-	*info_used = MPI_INFO_NULL;
+    info = OBJ_NEW(ompi_info_t);
+    if (NULL == info) {
+        return MPI_ERR_INFO;
     }
-    else {
-	info = OBJ_NEW(ompi_info_t);
+    if (MPI_INFO_NULL != fh->f_info) {
 	ret = ompi_info_dup (fh->f_info, &info);
-	*info_used = info;
     }
+    *info_used = info;
 
     return ret;
 }
@@ -766,35 +769,36 @@ mca_io_ompio_file_get_byte_offset (ompi_file_t *fh,
 {
     mca_io_ompio_data_t *data;
     int i, k, index;
-    size_t position;
-    size_t total_bytes;
     size_t temp_offset;
 
     data = (mca_io_ompio_data_t *) fh->f_io_selected_data;
 
     temp_offset = data->ompio_fh.f_view_extent *
         (offset*data->ompio_fh.f_etype_size / data->ompio_fh.f_view_size);
+    
 
-    position = 0;
-    total_bytes = (offset*data->ompio_fh.f_etype_size) % data->ompio_fh.f_view_size;
+    i = (offset*data->ompio_fh.f_etype_size) % data->ompio_fh.f_view_size;
     index = 0;
-    i = total_bytes;
     k = 0;
 
     while (1) {
-        k += data->ompio_fh.f_decoded_iov[index].iov_len;
+        k = data->ompio_fh.f_decoded_iov[index].iov_len;
         if (i >= k) {
-            i = i - data->ompio_fh.f_decoded_iov[index].iov_len;
-            position += data->ompio_fh.f_decoded_iov[index].iov_len;
-            index = index+1;
+            i -= k;
+            index++;
+            if ( 0 == i ) {
+                k=0;
+                break;
+            }
         }
         else {
+            k=i;
             break;
         }
     }
 
     *disp = data->ompio_fh.f_disp + temp_offset +
-        (OMPI_MPI_OFFSET_TYPE)(intptr_t)data->ompio_fh.f_decoded_iov[index].iov_base;
+        (OMPI_MPI_OFFSET_TYPE)(intptr_t)data->ompio_fh.f_decoded_iov[index].iov_base + k;
 
     return OMPI_SUCCESS;
 }

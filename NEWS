@@ -80,6 +80,10 @@ Master (not on release branches yet)
 - Many enhancements to MPI RMA.  Open MPI now maps MPI RMA operations
   on to native RMA operations for those networks which support this
   capability.
+- The MPI C++ bindings -- which were removed from the MPI standard in
+  v3.0 -- are no longer built by default and will be removed in some
+  future version of Open MPI.  Use the --enable-mpi-cxx-bindings
+  configure option to build the deprecated/removed MPI C++ bindings.
 - ompi_info now shows all components, even if they do not have MCA
   parameters.  The prettyprint output now separates groups with a
   dashed line.
@@ -87,7 +91,8 @@ Master (not on release branches yet)
   Version 1.1.2 of PMIx is included internally in this release.
 - Add support for PLFS file systems in Open MPI I/O.
 - Add support for UCX transport.
-- Improved support for MPI_THREAD_MULTIPLE.
+- Improved support for MPI_THREAD_MULTIPLE (when configured with
+  --enable-mpi-thread-multiple).
 - Simplify build process for Cray XC systems.  Add support for
   using native SLURM.
 - Updated internal/embedded copies of third-part software:

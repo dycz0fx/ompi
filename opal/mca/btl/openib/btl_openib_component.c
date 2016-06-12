@@ -781,7 +781,7 @@ static int init_one_port(opal_list_t *btl_list, mca_btl_openib_device_t *device,
 #if HAVE_DECL_IBV_ATOMIC_HCA
             openib_btl->atomic_ops_be = false;
 
-#if HAVE_DECL_IBV_EXP_QUERY_DEVICE
+#ifdef HAVE_STRUCT_IBV_EXP_DEVICE_ATTR_EXT_ATOM
             /* check that 8-byte atomics are supported */
             if (!(device->ib_exp_dev_attr.ext_atom.log_atomic_arg_sizes & (1<<3ull))) {
                 openib_btl->super.btl_flags &= ~MCA_BTL_FLAGS_ATOMIC_FOPS;
@@ -791,7 +791,7 @@ static int init_one_port(opal_list_t *btl_list, mca_btl_openib_device_t *device,
             }
 #endif
 
-#if HAVE_DECL_IBV_EXP_QUERY_DEVICE
+#ifdef HAVE_STRUCT_IBV_EXP_DEVICE_ATTR_EXT_ATOMIC_CAP
             switch (openib_btl->device->ib_exp_dev_attr.exp_atomic_cap)
 #else
             switch (openib_btl->device->ib_dev_attr.atomic_cap)
@@ -2229,16 +2229,6 @@ static int init_one_device(opal_list_t *btl_list, struct ibv_device* ib_dev)
     }
 
 error:
-#if OPAL_ENABLE_PROGRESS_THREADS
-    if (device->ib_channel) {
-        ibv_destroy_comp_channel(device->ib_channel);
-    }
-#endif
-
-    if (device->ib_pd) {
-        ibv_dealloc_pd(device->ib_pd);
-    }
-
     if (OPAL_SUCCESS != ret) {
         opal_show_help("help-mpi-btl-openib.txt",
                        "error in device init", true,
@@ -2246,9 +2236,6 @@ error:
                        ibv_get_device_name(device->ib_dev));
     }
 
-    if (device->ib_dev_context) {
-        ibv_close_device(device->ib_dev_context);
-    }
     if (NULL != allowed_ports) {
         free(allowed_ports);
     }

@@ -31,6 +31,7 @@
 #include "opal/mca/memory/base/empty.h"
 #include "opal/mca/memory/base/base.h"
 #include "opal/memoryhooks/memory.h"
+#include "opal/mca/patcher/base/base.h"
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -41,7 +42,12 @@
 #include <dlfcn.h>
 #include <assert.h>
 #include <sys/time.h>
+#if defined(HAVE_SYS_SYSCALL_H)
 #include <sys/syscall.h>
+#endif
+#if defined(HAVE_LINUX_MMAN_H)
+#include <linux/mman.h>
+#endif
 
 #include "memory_patcher.h"
 #undef opal_memory_changed
@@ -162,11 +168,20 @@ static int intercept_munmap(void *start, size_t length)
 
 #if defined (SYS_mremap)
 
+#if defined(__linux__)
 /* on linux this function has an optional extra argument but ... can not be used here because it
  * causes issues when intercepting a 4-argument mremap call */
 static void *(*original_mremap) (void *, size_t, size_t, int, void *);
+#else
+/* mremap has a different signature on BSD systems */
+static void *(*original_mremap) (void *, size_t, void *, size_t, int);
+#endif
 
+#if defined(__linux__)
 static void *intercept_mremap (void *start, size_t oldlen, size_t newlen, int flags, void *new_address)
+#else
+static void *intercept_mremap (void *start, size_t oldlen, void *new_address, size_t newlen, int flags)
+#endif
 {
     OPAL_PATCHER_BEGIN;
     void *result = MAP_FAILED;
@@ -175,15 +190,25 @@ static void *intercept_mremap (void *start, size_t oldlen, size_t newlen, int fl
         opal_mem_hooks_release_hook (start, oldlen, true);
     }
 
+#if defined(MREMAP_FIXED)
     if (!(flags & MREMAP_FIXED)) {
         new_address = NULL;
     }
+#endif
 
+#if defined(__linux__)
     if (!original_mremap) {
         result = (void *)(intptr_t) memory_patcher_syscall (SYS_mremap, start, oldlen, newlen, flags, new_address);
     } else {
         result = original_mremap (start, oldlen, newlen, flags, new_address);
     }
+#else
+    if (!original_mremap) {
+        result = (void *)(intptr_t) memory_patcher_syscall (SYS_mremap, start, oldlen, new_address, newlen, flags);
+    } else {
+        result = original_mremap (start, oldlen, new_address, newlen, flags);
+    }
+#endif
 
     OPAL_PATCHER_END;
     return result;
@@ -224,7 +249,7 @@ static int intercept_madvise (void *start, size_t length, int advice)
 #if defined SYS_brk
 
 #if OPAL_MEMORY_PATCHER_HAVE___CURBRK
-void *__curbrk; /* in libc */
+extern void *__curbrk; /* in libc */
 #endif
 
 static int (*original_brk) (void *);
@@ -372,11 +397,16 @@ static int patcher_register (void)
 
 static int patcher_query (int *priority)
 {
-    if (opal_patcher->patch_symbol) {
-        *priority = mca_memory_patcher_priority;
-    } else {
+    int rc;
+
+    rc = mca_base_framework_open (&opal_patcher_base_framework, 0);
+    if (OPAL_SUCCESS != rc) {
         *priority = -1;
+        return OPAL_SUCCESS;
     }
+
+    *priority = mca_memory_patcher_priority;
+
     return OPAL_SUCCESS;
 }
 
@@ -390,6 +420,12 @@ static int patcher_open (void)
     }
 
     was_executed_already = 1;
+
+    rc = opal_patcher_base_select ();
+    if (OPAL_SUCCESS != rc) {
+        mca_base_framework_close (&opal_patcher_base_framework);
+        return OPAL_ERR_NOT_AVAILABLE;
+    }
 
     /* set memory hooks support level */
     opal_mem_hooks_set_support (OPAL_MEMORY_FREE_SUPPORT | OPAL_MEMORY_MUNMAP_SUPPORT);
@@ -438,6 +474,8 @@ static int patcher_open (void)
 
 static int patcher_close(void)
 {
+    mca_base_framework_close (&opal_patcher_base_framework);
+
     /* Note that we don't need to unpatch any symbols here; the
        patcher framework will take care of all of that for us. */
     return OPAL_SUCCESS;

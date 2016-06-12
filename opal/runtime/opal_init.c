@@ -40,6 +40,7 @@
 #include "opal/util/proc.h"
 #include "opal/memoryhooks/memory.h"
 #include "opal/mca/base/base.h"
+#include "opal/mca/base/mca_base_var.h"
 #include "opal/runtime/opal.h"
 #include "opal/util/net.h"
 #include "opal/datatype/opal_datatype.h"
@@ -269,7 +270,7 @@ opal_init_util(int* pargc, char*** pargv)
 {
     int ret;
     char *error = NULL;
-    char hostname[512];
+    char hostname[OPAL_MAXHOSTNAMELEN];
 
     if( ++opal_util_initialized != 1 ) {
         if( opal_util_initialized < 1 ) {
@@ -294,7 +295,7 @@ opal_init_util(int* pargc, char*** pargv)
      * that we don't bother with fqdn and prefix issues here - we let
      * the RTE later replace this with a modified name if the user
      * requests it */
-    gethostname(hostname, 512);
+    gethostname(hostname, sizeof(hostname));
     opal_process_info.nodename = strdup(hostname);
 
     /* initialize the memory allocator */
@@ -332,6 +333,13 @@ opal_init_util(int* pargc, char*** pargv)
         error = "mca_base_var_init";
         goto return_error;
     }
+
+    /* read any param files that were provided */
+    if (OPAL_SUCCESS != (ret = mca_base_var_cache_files(false))) {
+        error = "failed to cache files";
+        goto return_error;
+    }
+
 
     /* register params for opal */
     if (OPAL_SUCCESS != (ret = opal_register_params())) {
@@ -430,14 +438,6 @@ opal_init(int* pargc, char*** pargv)
         error = "opal_memcpy_base_open";
         goto return_error;
     }
-
-    if (OPAL_SUCCESS != (ret = mca_base_framework_open(&opal_patcher_base_framework, 0))) {
-        error = "opal_patcher_base_open";
-        goto return_error;
-    }
-
-    /* select a patcher module. if a patcher module can not be found it is not an error. */
-    (void) opal_patcher_base_select ();
 
     /* initialize the memory manager / tracker */
     if (OPAL_SUCCESS != (ret = opal_mem_hooks_init())) {
