@@ -170,21 +170,21 @@ mca_coll_adapt_comm_query(struct ompi_communicator_t *comm, int *priority)
     adapt_module->super.coll_allgatherv = NULL;
     adapt_module->super.coll_allreduce  = mca_coll_adapt_allreduce;
     adapt_module->super.coll_alltoall   = NULL;
-    adapt_module->super.coll_alltoallv  = mca_coll_adapt_alltoallv;
+    //adapt_module->super.coll_alltoallv  = mca_coll_adapt_alltoallv;
     adapt_module->super.coll_alltoallw  = NULL;
     adapt_module->super.coll_barrier    = NULL;
     adapt_module->super.coll_bcast      = mca_coll_adapt_bcast;
     adapt_module->super.coll_exscan     = NULL;
     adapt_module->super.coll_gather     = NULL;
     adapt_module->super.coll_gatherv    = NULL;
-    adapt_module->super.coll_reduce     = mca_coll_adapt_reduce;
+    //adapt_module->super.coll_reduce     = mca_coll_adapt_reduce;
     adapt_module->super.coll_reduce_scatter = NULL;
     adapt_module->super.coll_scan       = NULL;
     adapt_module->super.coll_scatter    = NULL;
     adapt_module->super.coll_scatterv   = NULL;
-    adapt_module->super.coll_ibcast     = mca_coll_adapt_ibcast;
-    adapt_module->super.coll_ireduce    = mca_coll_adapt_ireduce;
-    adapt_module->super.coll_ialltoallv = mca_coll_adapt_ialltoallv;
+    //adapt_module->super.coll_ibcast     = mca_coll_adapt_ibcast;
+    //adapt_module->super.coll_ireduce    = mca_coll_adapt_ireduce;
+    //adapt_module->super.coll_ialltoallv = mca_coll_adapt_ialltoallv;
     //adapt_module->super.coll_iallreduce = mca_coll_adapt_iallreduce;
 
     opal_output_verbose(10, ompi_coll_base_framework.framework_output,

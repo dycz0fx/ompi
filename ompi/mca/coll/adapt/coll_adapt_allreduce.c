@@ -45,6 +45,9 @@ static int send_cb(ompi_request_t *req);
 static int recv_cb(ompi_request_t *req);
 
 static int send_cb(ompi_request_t *req){
+    
+    req->req_complete_cb_called = 1;
+    
     mca_coll_adapt_allreduce_context_t *context = (mca_coll_adapt_allreduce_context_t *) req->req_complete_cb_data;
     opal_atomic_add_32(&(context->con->sendbuf_ready), 1);
     //printf("[%d]: send_cb, peer = %d, distance = %d, inbuf_ready = %d, sendbuf_ready = %d\n", ompi_comm_rank(context->con->comm), context->peer, context->distance, context->con->inbuf_ready, context->con->sendbuf_ready);
@@ -162,11 +165,17 @@ static int send_cb(ompi_request_t *req){
         if (context->con->complete == 2) {
             //signal
             //printf("[%d]: last send, signal\n", ompi_comm_rank(context->con->comm));
-            opal_condition_t *temp_cond = context->con->request_cond;
+            ompi_request_t *temp_req = context->con->request;
             opal_free_list_t * temp = context->con->context_list;
             OBJ_RELEASE(context->con);
             opal_free_list_return(temp, (opal_free_list_item_t*)context);
-            opal_condition_signal(temp_cond);
+            OBJ_RELEASE(context->con);
+            OBJ_RELEASE(context->con->inbuf_list);
+            OBJ_RELEASE(context->con->context_list);
+            free(context->con->sendbuf);
+            OPAL_THREAD_LOCK(&ompi_request_lock);
+            ompi_request_complete(temp_req, 1);
+            OPAL_THREAD_UNLOCK(&ompi_request_lock);
         }
         else{
             opal_free_list_t * temp = context->con->context_list;
@@ -178,6 +187,9 @@ static int send_cb(ompi_request_t *req){
 }
 
 static int recv_cb(ompi_request_t *req){
+    
+    req->req_complete_cb_called = 1;
+
     mca_coll_adapt_allreduce_context_t *context = (mca_coll_adapt_allreduce_context_t *) req->req_complete_cb_data;
 
     opal_atomic_add_32(&(context->con->inbuf_ready), 1);
@@ -298,14 +310,20 @@ static int recv_cb(ompi_request_t *req){
         if (context->con->complete == 2) {
             //signal
             //printf("[%d]: last recv, signal\n", ompi_comm_rank(context->con->comm));
-            opal_condition_t *temp_cond = context->con->request_cond;
+            ompi_request_t *temp_req = context->con->request;
             if (context->newrank > 0) {
                 opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)context->inbuf);
             }
             opal_free_list_t * temp = context->con->context_list;
             OBJ_RELEASE(context->con);
             opal_free_list_return(temp, (opal_free_list_item_t*)context);
-            opal_condition_signal(temp_cond);
+            OBJ_RELEASE(context->con);
+            OBJ_RELEASE(context->con->inbuf_list);
+            OBJ_RELEASE(context->con->context_list);
+            free(context->con->sendbuf);
+            OPAL_THREAD_LOCK(&ompi_request_lock);
+            ompi_request_complete(temp_req, 1);
+            OPAL_THREAD_UNLOCK(&ompi_request_lock);
         }
         else{
             if (context->newrank > 0) {
@@ -353,13 +371,17 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
     adjsize >>= 1;
     extra_ranks = size - adjsize;
 
-    //set up condition
-    opal_condition_t request_cond;
-    OBJ_CONSTRUCT(&request_cond,opal_condition_t);
-    
-    //set up mutex
-    opal_mutex_t * mutex_condition_wait;      //for condition wait
-    mutex_condition_wait = OBJ_NEW(opal_mutex_t);
+    ompi_request_t * temp_request = NULL;
+    //set up request
+    temp_request = OBJ_NEW(ompi_request_t);
+    OMPI_REQUEST_INIT(temp_request, false);
+    temp_request->req_type = 0;
+    temp_request->req_free = adapt_request_free;
+    temp_request->req_status.MPI_SOURCE = 0;
+    temp_request->req_status.MPI_TAG = 0;
+    temp_request->req_status.MPI_ERROR = 0;
+    temp_request->req_status._cancelled = 0;
+    temp_request->req_status._ucount = 0;
 
     //set up free list
     opal_free_list_t * context_list = OBJ_NEW(opal_free_list_t);
@@ -391,7 +413,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
     con->count = count;
     con->datatype = dtype;
     con->comm = comm;
-    con->request_cond = &request_cond;
+    con->request = temp_request;
     con->context_list = context_list;
     con->op = op;
     con->lower_bound = lower_bound;
@@ -536,19 +558,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
         }
         
     }
-    OPAL_THREAD_LOCK(mutex_condition_wait);
-    while (con->complete < 2) {
-        opal_condition_wait(&request_cond, mutex_condition_wait);
-    }
-    OPAL_THREAD_UNLOCK(mutex_condition_wait);
-
-    //free
-    OBJ_RELEASE(con);
-    OBJ_RELEASE(inbuf_list);
-    OBJ_RELEASE(context_list);
-    OBJ_RELEASE(mutex_condition_wait);
-    OBJ_DESTRUCT(&request_cond);
-    free(accumbuf);
+    ompi_request_wait(&temp_request, MPI_STATUS_IGNORE);
     
     return MPI_SUCCESS;
 }

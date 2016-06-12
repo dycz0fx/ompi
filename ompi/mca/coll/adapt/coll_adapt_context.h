@@ -275,7 +275,7 @@ struct mca_coll_adapt_constant_allreduce_context_s {
     size_t count;
     ompi_datatype_t * datatype;
     ompi_communicator_t * comm;
-    opal_condition_t * request_cond;
+    ompi_request_t * request;
     opal_free_list_t * context_list;
     ompi_op_t * op;  //reduce operation
     ptrdiff_t lower_bound;

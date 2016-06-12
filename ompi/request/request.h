@@ -110,6 +110,7 @@ struct ompi_request_t {
     ompi_request_cancel_fn_t req_cancel;        /**< Optional function to cancel the request */
     ompi_request_complete_fn_t req_complete_cb; /**< Called when the request is MPI completed */
     void *req_complete_cb_data;
+    bool req_complete_cb_called;
     ompi_mpi_object_t req_mpi_object;           /**< Pointer to MPI object that created this request */
 };
 
@@ -143,6 +144,7 @@ typedef struct ompi_predefined_request_t ompi_predefined_request_t;
         (request)->req_complete = false;              \
         (request)->req_state = OMPI_REQUEST_INACTIVE; \
         (request)->req_persistent = (persistent);     \
+        (request)->req_complete_cb_called = 0;        \
     } while (0);
 
 /**
@@ -398,16 +400,32 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
  */
 static inline int ompi_request_complete(ompi_request_t* request, bool with_signal)
 {
-    //if complete_cb is not null, callback
-    if( !opal_atomic_cmpset_ptr(&request->req_complete_cb, NULL, (void*)1L) ) {
-        if ((long)(request->req_complete_cb) != 1L) {
-            ompi_request_complete_fn_t tmp = request->req_complete_cb;
-            tmp( request );
-            request->req_complete_cb = NULL;
-        }
+    //if complete_cb is not null, callback, complete_cb is null, set to 1
+//    if( !opal_atomic_cmpset_ptr(&request->req_complete_cb, NULL, (void*)1L) ) {
+//        if ((long)(request->req_complete_cb) != 1L) {
+//            ompi_request_complete_fn_t tmp = request->req_complete_cb;
+//            tmp( request );
+//            request->req_complete_cb = NULL;
+//        }
+//    }
+    
+//    ompi_request_complete_fn_t tmp = request->req_complete_cb;
+//    printf("Callback = %ld\n", (long)tmp);
+//    if( !opal_atomic_cmpset_ptr(&tmp, NULL, (void*)1L) ) {
+//        if ((long)(tmp) != 1L) {
+//            tmp( request );
+//            request->req_complete_cb = NULL;
+//        }
+//    }
+    ompi_request_complete_fn_t tmp = request->req_complete_cb;
+    if( NULL != tmp && request->req_complete_cb_called == 0) {
+        request->req_complete_cb = NULL;
+        tmp( request );
     }
+    
     ompi_request_completed++;
     request->req_complete = true;
+    
     if( OPAL_UNLIKELY(MPI_SUCCESS != request->req_status.MPI_ERROR) ) {
         ompi_request_failed++;
     }
@@ -424,11 +442,14 @@ static inline int ompi_request_set_callback(ompi_request_t* request,
                                             ompi_request_complete_fn_t cb,
                                             void* cb_data)
 {
-    request->req_complete_cb_data = cb_data;
-    long temp = (long)cb;
-    //if complete_cb_data is NULL, set call_back return 1
-    return opal_atomic_cmpset_ptr(&request->req_complete_cb, NULL, (void *)temp);
+//    request->req_complete_cb_data = cb_data;
+//    long temp = (long)cb;
+//    //if complete_cb_data is NULL, set call_back return 1
+//    return opal_atomic_cmpset_ptr(&request->req_complete_cb, NULL, (void *)temp);
     
+    request->req_complete_cb_data = cb_data;
+    request->req_complete_cb = cb;
+    return !((request->req_complete_cb_called == 0) && (request->req_complete));
 }
 
 END_C_DECLS

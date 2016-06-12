@@ -30,6 +30,8 @@ static void printfno(){
 //send call back
 static int send_cb(ompi_request_t *req)
 {
+    req->req_complete_cb_called = 1;
+
     mca_coll_adapt_bcast_context_t *context = (mca_coll_adapt_bcast_context_t *) req->req_complete_cb_data;
     
     int err;
@@ -87,6 +89,9 @@ static int send_cb(ompi_request_t *req)
 
 //receive call back
 static int recv_cb(ompi_request_t *req){
+    
+    req->req_complete_cb_called = 1;
+
     //get necessary info from request
     mca_coll_adapt_bcast_context_t *context = (mca_coll_adapt_bcast_context_t *) req->req_complete_cb_data;
     
