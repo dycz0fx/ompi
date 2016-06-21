@@ -953,3 +953,115 @@ int ompi_coll_base_topo_dump_tree (ompi_coll_tree_t* tree, int rank)
     return (0);
 }
 
+#define TOPO_LEVEL 5    //topo aware
+void get_topo(int **topo, int size){
+    topo[0][0] = 0;
+    topo[0][1] = 0;
+    topo[0][2] = 0;
+    topo[0][3] = 0;
+    topo[0][4] = 0;
+    
+    topo[1][0] = 0;
+    topo[1][1] = 0;
+    topo[1][2] = 0;
+    topo[1][3] = 0;
+    topo[1][4] = 0;
+    
+    topo[2][0] = 0;
+    topo[2][1] = 0;
+    topo[2][2] = 0;
+    topo[2][3] = 0;
+    topo[2][4] = 0;
+    
+    topo[3][0] = 0;
+    topo[3][1] = 0;
+    topo[3][2] = 0;
+    topo[3][3] = 0;
+    topo[3][4] = 1;
+    
+    topo[4][0] = 0;
+    topo[4][1] = 0;
+    topo[4][2] = 0;
+    topo[4][3] = 0;
+    topo[4][4] = 1;
+    
+    topo[5][0] = 0;
+    topo[5][1] = 0;
+    topo[5][2] = 0;
+    topo[5][3] = 0;
+    topo[5][4] = 1;
+    
+    topo[6][0] = 0;
+    topo[6][1] = 0;
+    topo[6][2] = 0;
+    topo[6][3] = 0;
+    topo[6][4] = 2;
+    
+    topo[7][0] = 0;
+    topo[7][1] = 0;
+    topo[7][2] = 0;
+    topo[7][3] = 0;
+    topo[7][4] = 2;
+}
+
+void set_helper(ompi_coll_topo_helper_t *helper, int **topo, int size){
+    int i, j;
+    int count = 0;
+    int *temp = (int *) malloc(sizeof(int)*size);
+    for (i=0; i<TOPO_LEVEL; i++) {
+        count = 0;
+        int this_group = -1;
+        for (j=0; j<size; j++) {
+            if (this_group != topo[j][i]) {
+                this_group = topo[j][i];
+                temp[count] = j;
+                count++;
+            }
+        }
+        helper[i].num_group = count;
+        helper[i].start_loc = (int *)malloc(sizeof(int)*count);
+        for (j=0; j<count; j++) {
+            helper[i].start_loc[j] = temp[j];
+        }
+    }
+    free(temp);
+}
+
+void free_helper(ompi_coll_topo_helper_t *helper){
+    int i;
+    for (i=0; i<TOPO_LEVEL; i++) {
+        free(helper[i].start_loc);
+    }
+}
+
+void print_helper(ompi_coll_topo_helper_t *helper){
+    int i, j;
+    for (i=0; i<TOPO_LEVEL; i++) {
+        printf("[Topo Level %d]: ", i);
+        for (j=0; j<helper[i].num_group; j++) {
+            printf("%d ", helper[i].start_loc[j]);
+        }
+    }
+}
+
+ompi_coll_tree_t*
+ompi_coll_base_topo_build_topoware_tree(struct ompi_communicator_t* comm, int root ){
+    int size, rank, i, j;
+    size = ompi_comm_size(comm);
+    rank = ompi_comm_rank(comm);
+    int **topo = (int **)malloc(sizeof(int)*size*TOPO_LEVEL);
+    get_topo(topo, size);
+    int shiftedrank = rank - root;
+    if( shiftedrank < 0 ) {
+        shiftedrank += size;
+    }
+    ompi_coll_topo_helper_t *helper = (ompi_coll_topo_helper_t *) malloc(sizeof(ompi_coll_topo_helper_t)*TOPO_LEVEL);
+    set_helper(helper, topo, size);
+    print_helper(helper);
+    free_helper(helper);
+}
+
+ompi_coll_tree_t*
+ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int root );
+
+

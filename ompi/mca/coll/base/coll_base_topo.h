@@ -51,11 +51,9 @@ ompi_coll_tree_t*
 ompi_coll_base_topo_build_chain( int fanout,
                                   struct ompi_communicator_t* com,
                                   int root );
-
 ompi_coll_tree_t**
 ompi_coll_base_topo_build_two_trees_binary(struct ompi_communicator_t* comm,
                                            int root );
-
 ompi_coll_tree_t**
 ompi_coll_base_topo_build_two_trees_binomial(struct ompi_communicator_t* comm,
                                              int root );
@@ -66,6 +64,24 @@ int ompi_coll_base_topo_destroy_two_trees( ompi_coll_tree_t** trees );
 
 /* debugging stuff, will be removed later */
 int ompi_coll_base_topo_dump_tree (ompi_coll_tree_t* tree, int rank);
+
+ompi_coll_tree_t*
+ompi_coll_base_topo_build_topoware_tree(struct ompi_communicator_t* comm,
+                                        int root );
+ompi_coll_tree_t*
+ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm,
+                                          int root );
+
+void get_topo(int **topo, int size);
+
+typedef struct ompi_coll_topo_helper_t {
+    int num_group;  //for a level, how many groups are there
+    int* start_loc; //the starting point of each group
+} ompi_coll_topo_helper_t;
+
+void set_helper(ompi_coll_topo_helper_t *helper, int **topo, int size);
+void free_helper(ompi_coll_topo_helper_t *helper);
+void print_helper(ompi_coll_topo_helper_t *helper);
 
 END_C_DECLS
 
