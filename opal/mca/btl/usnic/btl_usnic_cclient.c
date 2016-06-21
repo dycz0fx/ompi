@@ -234,6 +234,9 @@ int opal_btl_usnic_connectivity_ping(uint32_t src_ipv4_addr, int src_port,
         return OPAL_SUCCESS;
     }
 
+    /* Protect opal_fd_write for multithreaded case */
+    OPAL_THREAD_LOCK(&btl_usnic_lock);
+
     /* Send the PING command */
     int id = CONNECTIVITY_AGENT_CMD_PING;
     if (OPAL_SUCCESS != opal_fd_write(agent_fd, sizeof(id), &id)) {
@@ -259,6 +262,9 @@ int opal_btl_usnic_connectivity_ping(uint32_t src_ipv4_addr, int src_port,
         ABORT("usnic connectivity client IPC write failed");
         /* Will not return */
     }
+
+    /* Unlock and return */
+    OPAL_THREAD_UNLOCK(&btl_usnic_lock);
 
     return OPAL_SUCCESS;
 }

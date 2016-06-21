@@ -99,6 +99,8 @@
 #endif
 #include "ompi/runtime/ompi_cr.h"
 
+/* newer versions of gcc have poisoned this deprecated feature */
+#if HAVE___MALLOC_INITIALIZE_HOOK
 #include "opal/mca/memory/base/base.h"
 /* So this sucks, but with OPAL in its own library that is brought in
    implicity from libmpi, there are times when the malloc initialize
@@ -106,6 +108,7 @@
    from here, since any MPI code is going to call MPI_Init... */
 OPAL_DECLSPEC void (*__malloc_initialize_hook) (void) =
     opal_memory_base_malloc_init_hook;
+#endif
 
 /* This is required for the boundaries of the hash tables used to store
  * the F90 types returned by the MPI_Type_create_f90_XXX functions.
@@ -377,6 +380,8 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided)
     char *cmd=NULL, *av=NULL;
     ompi_errhandler_errtrk_t errtrk;
     volatile bool active;
+    opal_list_t info;
+    opal_value_t *kv;
     OPAL_TIMING_DECLARE(tm);
     OPAL_TIMING_INIT_EXT(&tm, OPAL_TIMING_GET_TIME_OF_DAY);
 
@@ -519,10 +524,16 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided)
     /* Register the default errhandler callback  */
     errtrk.status = OPAL_ERROR;
     errtrk.active = true;
-    opal_pmix.register_errhandler(NULL, ompi_errhandler_callback,
-                                  ompi_errhandler_registration_callback,
-                                  (void*)&errtrk);
+    /* we want to go first */
+    OBJ_CONSTRUCT(&info, opal_list_t);
+    kv = OBJ_NEW(opal_value_t);
+    kv->key = strdup(OPAL_PMIX_EVENT_ORDER_PREPEND);
+    opal_list_append(&info, &kv->super);
+    opal_pmix.register_evhandler(NULL, &info, ompi_errhandler_callback,
+                                 ompi_errhandler_registration_callback,
+                                 (void*)&errtrk);
     OMPI_WAIT_FOR_COMPLETION(errtrk.active);
+    OPAL_LIST_DESTRUCT(&info);
     if (OPAL_SUCCESS != errtrk.status) {
         error = "Error handler registration";
         ret = errtrk.status;
