@@ -182,7 +182,7 @@ static int recv_cb(ompi_request_t *req){
 }
 
 int mca_coll_adapt_bcast(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    return mca_coll_adapt_bcast_topoaware_tree(buff, count, datatype, root, comm, module);
+    return mca_coll_adapt_bcast_binomial(buff, count, datatype, root, comm, module);
 }
 
 
