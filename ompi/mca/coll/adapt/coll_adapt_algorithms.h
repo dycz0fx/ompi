@@ -120,7 +120,7 @@ static inline void print_tree(ompi_coll_tree_t* tree, int rank) {
     }
     printf("\n");
 }
-            
+
 static inline int adapt_request_free(ompi_request_t** request)
 {
     (*request)->req_state = OMPI_REQUEST_INVALID;

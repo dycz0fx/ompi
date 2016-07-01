@@ -36,24 +36,26 @@ typedef struct ompi_coll_tree_t {
 
 ompi_coll_tree_t*
 ompi_coll_base_topo_build_tree( int fanout,
-                                 struct ompi_communicator_t* com,
-                                 int root );
+                               struct ompi_communicator_t* com,
+                               int root );
 ompi_coll_tree_t*
 ompi_coll_base_topo_build_in_order_bintree( struct ompi_communicator_t* comm );
 
 ompi_coll_tree_t*
 ompi_coll_base_topo_build_bmtree( struct ompi_communicator_t* comm,
-                                   int root );
+                                 int root );
 ompi_coll_tree_t*
 ompi_coll_base_topo_build_in_order_bmtree( struct ompi_communicator_t* comm,
-                                            int root );
+                                          int root );
 ompi_coll_tree_t*
 ompi_coll_base_topo_build_chain( int fanout,
-                                  struct ompi_communicator_t* com,
-                                  int root );
+                                struct ompi_communicator_t* com,
+                                int root );
+
 ompi_coll_tree_t**
 ompi_coll_base_topo_build_two_trees_binary(struct ompi_communicator_t* comm,
                                            int root );
+
 ompi_coll_tree_t**
 ompi_coll_base_topo_build_two_trees_binomial(struct ompi_communicator_t* comm,
                                              int root );
@@ -79,10 +81,13 @@ typedef struct ompi_coll_topo_helper_t {
     int* start_loc; //the starting point of each group
 } ompi_coll_topo_helper_t;
 
-void set_helper(ompi_coll_topo_helper_t *helper, int **topo, int size);
+void set_helper(ompi_coll_topo_helper_t *helper, int* ranks, int **topo, int root, int size);
 void free_helper(ompi_coll_topo_helper_t *helper);
 void print_helper(ompi_coll_topo_helper_t *helper);
 
+int to_vrank(int rank, int *ranks, int size);
+int to_rank(int vrank, int *ranks, int size);
+void move_group_forward(int *ranks, int size, int start, int end);
 END_C_DECLS
 
 #endif  /* MCA_COLL_BASE_TOPO_H_HAS_BEEN_INCLUDED */

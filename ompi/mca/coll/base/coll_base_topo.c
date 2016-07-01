@@ -59,7 +59,7 @@ static int calculate_level( int fanout, int rank )
 static int calculate_num_nodes_up_to_level( int fanout, int level )
 {
     /* just use geometric progression formula for sum:
-       a^0+a^1+...a^(n-1) = (a^n-1)/(a-1) */
+     a^0+a^1+...a^(n-1) = (a^n-1)/(a-1) */
     return ((pown(fanout,level) - 1)/(fanout - 1));
 }
 
@@ -77,17 +77,17 @@ static int calculate_num_nodes_up_to_level( int fanout, int level )
 
 ompi_coll_tree_t*
 ompi_coll_base_topo_build_tree( int fanout,
-                                 struct ompi_communicator_t* comm,
-                                 int root )
+                               struct ompi_communicator_t* comm,
+                               int root )
 {
     int rank, size, schild, sparent, shiftedrank, i;
     int level; /* location of my rank in the tree structure of size */
     int delta; /* number of nodes on my level */
     int slimit; /* total number of nodes on levels above me */
     ompi_coll_tree_t* tree;
-
+    
     OPAL_OUTPUT((ompi_coll_base_framework.framework_output, "coll:base:topo_build_tree Building fo %d rt %d", fanout, root));
-
+    
     if (fanout<1) {
         OPAL_OUTPUT((ompi_coll_base_framework.framework_output, "coll:base:topo_build_tree invalid fanout %d", fanout));
         return NULL;
@@ -96,27 +96,27 @@ ompi_coll_base_topo_build_tree( int fanout,
         OPAL_OUTPUT((ompi_coll_base_framework.framework_output,"coll:base:topo_build_tree invalid fanout %d bigger than max %d", fanout, MAXTREEFANOUT));
         return NULL;
     }
-
+    
     /*
      * Get size and rank of the process in this communicator
      */
     size = ompi_comm_size(comm);
     rank = ompi_comm_rank(comm);
-
+    
     tree = (ompi_coll_tree_t*)malloc(sizeof(ompi_coll_tree_t));
     if (!tree) {
         OPAL_OUTPUT((ompi_coll_base_framework.framework_output,"coll:base:topo_build_tree PANIC::out of memory"));
         return NULL;
     }
-
+    
     tree->tree_root     = MPI_UNDEFINED;
     tree->tree_nextsize = MPI_UNDEFINED;
-
+    
     /*
      * Set root
      */
     tree->tree_root = root;
-
+    
     /*
      * Initialize tree
      */
@@ -128,12 +128,12 @@ ompi_coll_base_topo_build_tree( int fanout,
     for( i = 0; i < fanout; i++ ) {
         tree->tree_next[i] = -1;
     }
-
+    
     /* return if we have less than 2 processes */
     if( size < 2 ) {
         return tree;
     }
-
+    
     /*
      * Shift all ranks by root, so that the algorithm can be
      * designed as if root would be always 0
@@ -144,11 +144,11 @@ ompi_coll_base_topo_build_tree( int fanout,
     if( shiftedrank < 0 ) {
         shiftedrank += size;
     }
-
+    
     /* calculate my level */
     level = calculate_level( fanout, shiftedrank );
     delta = pown( fanout, level );
-
+    
     /* find my children */
     for( i = 0; i < fanout; i++ ) {
         schild = shiftedrank + delta * (i+1);
@@ -159,7 +159,7 @@ ompi_coll_base_topo_build_tree( int fanout,
             break;
         }
     }
-
+    
     /* find my parent */
     slimit = calculate_num_nodes_up_to_level( fanout, level );
     sparent = shiftedrank;
@@ -171,7 +171,7 @@ ompi_coll_base_topo_build_tree( int fanout,
         }
     }
     tree->tree_prev = (sparent+root)%size;
-
+    
     return tree;
 }
 
@@ -194,23 +194,23 @@ ompi_coll_base_topo_build_in_order_bintree( struct ompi_communicator_t* comm )
 {
     int rank, size, myrank, rightsize, delta, parent, lchild, rchild;
     ompi_coll_tree_t* tree;
-
+    
     /*
      * Get size and rank of the process in this communicator
      */
     size = ompi_comm_size(comm);
     rank = ompi_comm_rank(comm);
-
+    
     tree = (ompi_coll_tree_t*)malloc(sizeof(ompi_coll_tree_t));
     if (!tree) {
         OPAL_OUTPUT((ompi_coll_base_framework.framework_output,
                      "coll:base:topo_build_tree PANIC::out of memory"));
         return NULL;
     }
-
+    
     tree->tree_root     = MPI_UNDEFINED;
     tree->tree_nextsize = MPI_UNDEFINED;
-
+    
     /*
      * Initialize tree
      */
@@ -224,18 +224,18 @@ ompi_coll_base_topo_build_in_order_bintree( struct ompi_communicator_t* comm )
     OPAL_OUTPUT((ompi_coll_base_framework.framework_output,
                  "coll:base:topo_build_in_order_tree Building fo %d rt %d",
                  tree->tree_fanout, tree->tree_root));
-
+    
     /*
      * Build the tree
      */
     myrank = rank;
     parent = size - 1;
     delta = 0;
-
+    
     while ( 1 ) {
         /* Compute the size of the right subtree */
         rightsize = size >> 1;
-
+        
         /* Determine the left and right child of this parent  */
         lchild = -1;
         rchild = -1;
@@ -245,27 +245,27 @@ ompi_coll_base_topo_build_in_order_bintree( struct ompi_communicator_t* comm )
                 rchild = rightsize - 1;
             }
         }
-
+        
         /* The following cases are possible: myrank can be
-           - a parent,
-           - belong to the left subtree, or
-           - belong to the right subtee
-           Each of the cases need to be handled differently.
-        */
-
+         - a parent,
+         - belong to the left subtree, or
+         - belong to the right subtee
+         Each of the cases need to be handled differently.
+         */
+        
         if (myrank == parent) {
             /* I am the parent:
-               - compute real ranks of my children, and exit the loop. */
+             - compute real ranks of my children, and exit the loop. */
             if (lchild >= 0) tree->tree_next[0] = lchild + delta;
             if (rchild >= 0) tree->tree_next[1] = rchild + delta;
             break;
         }
         if (myrank > rchild) {
             /* I belong to the left subtree:
-               - If I am the left child, compute real rank of my parent
-               - Iterate down through tree:
-               compute new size, shift ranks down, and update delta.
-            */
+             - If I am the left child, compute real rank of my parent
+             - Iterate down through tree:
+             compute new size, shift ranks down, and update delta.
+             */
             if (myrank == lchild) {
                 tree->tree_prev = parent + delta;
             }
@@ -273,14 +273,14 @@ ompi_coll_base_topo_build_in_order_bintree( struct ompi_communicator_t* comm )
             delta = delta + rightsize;
             myrank = myrank - rightsize;
             parent = size - 1;
-
+            
         } else {
             /* I belong to the right subtree:
-               - If I am the right child, compute real rank of my parent
-               - Iterate down through tree:
-               compute new size and parent,
-               but the delta and rank do not need to change.
-            */
+             - If I am the right child, compute real rank of my parent
+             - Iterate down through tree:
+             compute new size and parent,
+             but the delta and rank do not need to change.
+             */
             if (myrank == rchild) {
                 tree->tree_prev = parent + delta;
             }
@@ -288,26 +288,26 @@ ompi_coll_base_topo_build_in_order_bintree( struct ompi_communicator_t* comm )
             parent = rchild;
         }
     }
-
+    
     if (tree->tree_next[0] >= 0) { tree->tree_nextsize = 1; }
     if (tree->tree_next[1] >= 0) { tree->tree_nextsize += 1; }
-
+    
     return tree;
 }
 
 int ompi_coll_base_topo_destroy_tree( ompi_coll_tree_t** tree )
 {
     ompi_coll_tree_t *ptr;
-
+    
     if ((!tree)||(!*tree)) {
         return OMPI_SUCCESS;
     }
-
+    
     ptr = *tree;
-
+    
     free (ptr);
     *tree = NULL;   /* mark tree as gone */
-
+    
     return OMPI_SUCCESS;
 }
 
@@ -335,39 +335,39 @@ int ompi_coll_base_topo_destroy_two_trees( ompi_coll_tree_t** trees )
  */
 ompi_coll_tree_t*
 ompi_coll_base_topo_build_bmtree( struct ompi_communicator_t* comm,
-                                   int root )
+                                 int root )
 {
     int childs = 0, rank, size, mask = 1, index, remote, i;
     ompi_coll_tree_t *bmtree;
-
+    
     OPAL_OUTPUT((ompi_coll_base_framework.framework_output,"coll:base:topo:build_bmtree rt %d", root));
-
+    
     /*
      * Get size and rank of the process in this communicator
      */
     size = ompi_comm_size(comm);
     rank = ompi_comm_rank(comm);
-
+    
     index = rank -root;
-
+    
     bmtree = (ompi_coll_tree_t*)malloc(sizeof(ompi_coll_tree_t));
     if (!bmtree) {
         OPAL_OUTPUT((ompi_coll_base_framework.framework_output,"coll:base:topo:build_bmtree PANIC out of memory"));
         return NULL;
     }
-
+    
     bmtree->tree_bmtree   = 1;
-
+    
     bmtree->tree_root     = MPI_UNDEFINED;
     bmtree->tree_nextsize = MPI_UNDEFINED;
     for( i = 0;i < MAXTREEFANOUT; i++ ) {
         bmtree->tree_next[i] = -1;
     }
-
+    
     if( index < 0 ) index += size;
-
+    
     mask = opal_next_poweroftwo(index);
-
+    
     /* Now I can compute my father rank */
     if( root == rank ) {
         bmtree->tree_prev = root;
@@ -412,38 +412,38 @@ ompi_coll_base_topo_build_bmtree( struct ompi_communicator_t* comm,
  */
 ompi_coll_tree_t*
 ompi_coll_base_topo_build_in_order_bmtree( struct ompi_communicator_t* comm,
-                                            int root )
+                                          int root )
 {
     int childs = 0, rank, vrank, size, mask = 1, remote, i;
     ompi_coll_tree_t *bmtree;
-
+    
     OPAL_OUTPUT((ompi_coll_base_framework.framework_output,"coll:base:topo:build_in_order_bmtree rt %d", root));
-
+    
     /*
      * Get size and rank of the process in this communicator
      */
     size = ompi_comm_size(comm);
     rank = ompi_comm_rank(comm);
-
+    
     vrank = (rank - root + size) % size;
-
+    
     bmtree = (ompi_coll_tree_t*)malloc(sizeof(ompi_coll_tree_t));
     if (!bmtree) {
         OPAL_OUTPUT((ompi_coll_base_framework.framework_output,"coll:base:topo:build_bmtree PANIC out of memory"));
         return NULL;
     }
-
+    
     bmtree->tree_bmtree   = 1;
     bmtree->tree_root     = MPI_UNDEFINED;
     bmtree->tree_nextsize = MPI_UNDEFINED;
     for(i=0;i<MAXTREEFANOUT;i++) {
         bmtree->tree_next[i] = -1;
     }
-
+    
     if (root == rank) {
         bmtree->tree_prev = root;
     }
-
+    
     while (mask < size) {
         remote = vrank ^ mask;
         if (remote < vrank) {
@@ -464,27 +464,27 @@ ompi_coll_base_topo_build_in_order_bmtree( struct ompi_communicator_t* comm,
     }
     bmtree->tree_nextsize = childs;
     bmtree->tree_root     = root;
-
+    
     return bmtree;
 }
 
 
 ompi_coll_tree_t*
 ompi_coll_base_topo_build_chain( int fanout,
-                                  struct ompi_communicator_t* comm,
-                                  int root )
+                                struct ompi_communicator_t* comm,
+                                int root )
 {
     int i, maxchainlen, mark, head, len, rank, size, srank /* shifted rank */;
     ompi_coll_tree_t *chain;
-
+    
     OPAL_OUTPUT((ompi_coll_base_framework.framework_output,"coll:base:topo:build_chain fo %d rt %d", fanout, root));
-
+    
     /*
      * Get size and rank of the process in this communicator
      */
     size = ompi_comm_size(comm);
     rank = ompi_comm_rank(comm);
-
+    
     if( fanout < 1 ) {
         OPAL_OUTPUT((ompi_coll_base_framework.framework_output,"coll:base:topo:build_chain WARNING invalid fanout of ZERO, forcing to 1 (pipeline)!"));
         fanout = 1;
@@ -493,7 +493,7 @@ ompi_coll_base_topo_build_chain( int fanout,
         OPAL_OUTPUT((ompi_coll_base_framework.framework_output,"coll:base:topo:build_chain WARNING invalid fanout %d bigger than max %d, forcing to max!", fanout, MAXTREEFANOUT));
         fanout = MAXTREEFANOUT;
     }
-
+    
     /*
      * Allocate space for topology arrays if needed
      */
@@ -506,7 +506,7 @@ ompi_coll_base_topo_build_chain( int fanout,
     chain->tree_root     = MPI_UNDEFINED;
     chain->tree_nextsize = -1;
     for(i=0;i<fanout;i++) chain->tree_next[i] = -1;
-
+    
     /*
      * Set root & numchain
      */
@@ -517,20 +517,20 @@ ompi_coll_base_topo_build_chain( int fanout,
     } else {
         chain->tree_nextsize = fanout;
     }
-
+    
     /*
      * Shift ranks
      */
     srank = rank - root;
     if (srank < 0) srank += size;
-
+    
     /*
      * Special case - fanout == 1
      */
     if( fanout == 1 ) {
         if( srank == 0 ) chain->tree_prev = -1;
         else chain->tree_prev = (srank-1+root)%size;
-
+        
         if( (srank + 1) >= size) {
             chain->tree_next[0] = -1;
             chain->tree_nextsize = 0;
@@ -540,7 +540,7 @@ ompi_coll_base_topo_build_chain( int fanout,
         }
         return chain;
     }
-
+    
     /* Let's handle the case where there is just one node in the communicator */
     if( size == 1 ) {
         chain->tree_next[0] = -1;
@@ -558,7 +558,7 @@ ompi_coll_base_topo_build_chain( int fanout,
     } else {
         mark = fanout+1;
     }
-
+    
     /*
      * Find your own place in the list of shifted ranks
      */
@@ -573,7 +573,7 @@ ompi_coll_base_topo_build_chain( int fanout,
             head = mark*maxchainlen+1+(column-mark)*(maxchainlen-1);
             len = maxchainlen-1;
         }
-
+        
         if( srank == head ) {
             chain->tree_prev = 0; /*root*/
         } else {
@@ -610,7 +610,7 @@ ompi_coll_base_topo_build_chain( int fanout,
         }
         chain->tree_nextsize = fanout;
     }
-
+    
     return chain;
 }
 
@@ -941,7 +941,7 @@ ompi_coll_base_topo_build_two_trees_binomial(struct ompi_communicator_t* comm,
 int ompi_coll_base_topo_dump_tree (ompi_coll_tree_t* tree, int rank)
 {
     int i;
-
+    
     OPAL_OUTPUT((ompi_coll_base_framework.framework_output, "coll:base:topo:topo_dump_tree %1d tree root %d"
                  " fanout %d BM %1d nextsize %d prev %d",
                  rank, tree->tree_root, tree->tree_bmtree, tree->tree_fanout,
@@ -965,53 +965,88 @@ void get_topo(int **topo, int size){
     topo[1][1] = 0;
     topo[1][2] = 0;
     topo[1][3] = 0;
-    topo[1][4] = 0;
+    topo[1][4] = 1;
     
     topo[2][0] = 0;
     topo[2][1] = 0;
     topo[2][2] = 0;
-    topo[2][3] = 0;
+    topo[2][3] = 1;
     topo[2][4] = 0;
     
     topo[3][0] = 0;
     topo[3][1] = 0;
     topo[3][2] = 0;
-    topo[3][3] = 0;
+    topo[3][3] = 1;
     topo[3][4] = 1;
     
     topo[4][0] = 0;
     topo[4][1] = 0;
-    topo[4][2] = 0;
+    topo[4][2] = 1;
     topo[4][3] = 0;
-    topo[4][4] = 1;
+    topo[4][4] = 0;
     
     topo[5][0] = 0;
     topo[5][1] = 0;
-    topo[5][2] = 0;
+    topo[5][2] = 1;
     topo[5][3] = 0;
     topo[5][4] = 1;
     
     topo[6][0] = 0;
     topo[6][1] = 0;
-    topo[6][2] = 0;
-    topo[6][3] = 0;
-    topo[6][4] = 2;
+    topo[6][2] = 1;
+    topo[6][3] = 1;
+    topo[6][4] = 0;
     
     topo[7][0] = 0;
     topo[7][1] = 0;
-    topo[7][2] = 0;
-    topo[7][3] = 0;
-    topo[7][4] = 2;
+    topo[7][2] = 1;
+    topo[7][3] = 1;
+    topo[7][4] = 1;
 }
 
-void set_helper(ompi_coll_topo_helper_t *helper, int **topo, int size){
+
+int to_vrank(int rank, int *ranks, int size){
+    int i;
+    for (i=0; i<size; i++) {
+        if (ranks[i] == rank) {
+            return i;
+        }
+    }
+    return -1;
+    
+}
+int to_rank(int vrank, int *ranks, int size){
+    return ranks[vrank];
+    
+}
+
+//In ranks array, find actual rank start to end and move them forward
+void move_group_forward(int *ranks, int size, int start, int end){
+    int length = end - start+1;
+    int i, start_loc;
+    for (i=0; i<size; i++) {
+        if(ranks[i] == start) {
+            start_loc = i;
+            break;
+        }
+    }
+    for (i=start_loc-1; i>=0; i--) {
+        ranks[i+length] = ranks[i];
+    }
+    for (i=0; i<length; i++) {
+        ranks[i] = start+i;
+    }
+}
+
+//get the starting point of each gourp on every level
+void set_helper(ompi_coll_topo_helper_t *helper, int *ranks, int **topo, int root, int size){
     int i, j;
     int count = 0;
     int *temp = (int *) malloc(sizeof(int)*size);
     for (i=0; i<TOPO_LEVEL; i++) {
         count = 0;
         int this_group = -1;
-        for (j=0; j<size; j++) {
+        for (j=0; j<size; j++) {    //j is actual rank
             if (this_group != topo[j][i]) {
                 this_group = topo[j][i];
                 temp[count] = j;
@@ -1023,7 +1058,45 @@ void set_helper(ompi_coll_topo_helper_t *helper, int **topo, int size){
         for (j=0; j<count; j++) {
             helper[i].start_loc[j] = temp[j];
         }
+        //if there are more than one group in this level
+        if (count > 1) {
+            for (j=0; j<count; j++) {
+                if (root >= temp[j]) {
+                    int end;
+                    if (j == count-1) {
+                        end = size-1;
+                    }
+                    else{
+                        end = temp[j+1]-1;
+                    }
+                    //find the group with root in this level
+                    if (root <= end) {
+                        //move that group forward
+                        //printf("Move group forward: start %d, end %d\n", temp[j], end);
+                        move_group_forward(ranks, size, temp[j], end);
+                    }
+                }
+            }
+        }
     }
+    
+    //set helper with vranks
+    for (i=0; i<TOPO_LEVEL; i++) {
+        count = 0;
+        int this_group = -1;
+        for (j=0; j<size; j++) {    //j is virtal rank
+            if (this_group != topo[to_rank(j, ranks, size)][i]) {
+                this_group = topo[to_rank(j, ranks, size)][i];
+                temp[count] = j;
+                count++;
+            }
+        }
+        helper[i].num_group = count;
+        for (j=0; j<count; j++) {
+            helper[i].start_loc[j] = temp[j];
+        }
+    }
+    
     free(temp);
 }
 
@@ -1036,32 +1109,153 @@ void free_helper(ompi_coll_topo_helper_t *helper){
 
 void print_helper(ompi_coll_topo_helper_t *helper){
     int i, j;
+    //printf("print helper, topo level %d\n", TOPO_LEVEL);
     for (i=0; i<TOPO_LEVEL; i++) {
-        printf("[Topo Level %d]: ", i);
+        //printf("[Topo Level %d]: ", i);
         for (j=0; j<helper[i].num_group; j++) {
-            printf("%d ", helper[i].start_loc[j]);
+            //printf("%d ", helper[i].start_loc[j]);
         }
+        //printf("\n");
     }
 }
 
+
 ompi_coll_tree_t*
 ompi_coll_base_topo_build_topoware_tree(struct ompi_communicator_t* comm, int root ){
-    int size, rank, i, j;
+    int i, j;
+    ompi_coll_tree_t *tree = (ompi_coll_tree_t*)malloc(sizeof(ompi_coll_tree_t));
+    if (!tree) {
+        OPAL_OUTPUT((ompi_coll_base_framework.framework_output,"coll:base:topo_build_tree PANIC::out of memory"));
+        return NULL;
+    }
+    
+    //Set root
+    tree->tree_root = root;
+    
+    //Initialize tree
+    tree->tree_fanout   = 0;
+    tree->tree_bmtree   = 0;
+    tree->tree_root     = root;
+    tree->tree_prev     = -1;
+    tree->tree_nextsize = 0;
+    for( i = 0; i < MAXTREEFANOUT; i++ ) {
+        tree->tree_next[i] = -1;
+    }
+    
+    int size, rank;
     size = ompi_comm_size(comm);
     rank = ompi_comm_rank(comm);
-    int **topo = (int **)malloc(sizeof(int)*size*TOPO_LEVEL);
+    
+    int **topo = (int **)malloc(sizeof(int *)*size);
+    for (i=0; i<size; i++) {
+        topo[i] = (int *)malloc(sizeof(int)*TOPO_LEVEL);
+    }
     get_topo(topo, size);
-    int shiftedrank = rank - root;
-    if( shiftedrank < 0 ) {
-        shiftedrank += size;
+    
+    int *ranks = (int *)malloc(sizeof(int)*size);   //ranks[0] store which actual rank has vrank 0
+    for (i=0; i<size; i++) {
+        ranks[i] = i;
     }
     ompi_coll_topo_helper_t *helper = (ompi_coll_topo_helper_t *) malloc(sizeof(ompi_coll_topo_helper_t)*TOPO_LEVEL);
-    set_helper(helper, topo, size);
-    print_helper(helper);
+    set_helper(helper, ranks, topo, root, size);
+    //print_helper(helper);
+    
+    int head = 0;
+    int tail = size-1;
+    for (i=0; i<TOPO_LEVEL; i++) {
+        //count how many groups on this level between head and tail
+        int count = 0;
+        int *temp_start_loc = (int *)malloc(sizeof(int)*helper[i].num_group);
+        for (j=0; j<helper[i].num_group; j++) {
+            if (helper[i].start_loc[j] >= head) {
+                if (helper[i].start_loc[j] <= tail) {
+                    temp_start_loc[count] = helper[i].start_loc[j];
+                    count++;
+                }
+                else{
+                    break;
+                }
+            }
+        }
+        
+        //if there are more than 2 groups
+        if (count >= 2) {
+            //if this rank is the head
+            if (to_vrank(rank, ranks, size) == head) {
+                //set its children
+                for (j=1; j<count; j++) {
+                    tree->tree_next[tree->tree_nextsize] = to_rank(temp_start_loc[j], ranks, size);
+                    tree->tree_nextsize+=1;
+                    //printf("[rank %d]: set next %d\n", rank, tree->tree_next[tree->tree_nextsize-1]);
+                }
+                head = head;
+                tail = temp_start_loc[1]-1;
+            }
+            //if this rank is not the head
+            else {
+                //printf("[rank %d]: 0\n", rank);
+                for (j=0; j<count; j++) {
+                    if (to_vrank(rank, ranks, size) >= temp_start_loc[j]) {
+                        int end;
+                        if (j == count-1) {
+                            end = tail;
+                        }
+                        else{
+                            end = temp_start_loc[j+1]-1;
+                        }
+                        if (to_vrank(rank, ranks, size) <= end) {
+                            //printf("[rank %d]: vrank %d, start %d\n", rank, to_vrank(rank, ranks, size), temp_start_loc[j]);
+                            //if this rank is the child of head
+                            if (to_vrank(rank, ranks, size) == temp_start_loc[j]) {
+                                tree->tree_prev = to_rank(head, ranks, size);
+                                head = to_vrank(rank, ranks, size);
+                                //printf("[rank %d]: set prev %d\n", rank, tree->tree_prev);
+                            }
+                            //if not, continue search
+                            else{
+                                head = temp_start_loc[j];
+                            }
+                            if (j+1 <= count-1) {
+                                tail = temp_start_loc[j+1]-1;
+                            }
+                            else{
+                                tail = tail;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        //if there is only one group and it is last level
+        else if(i == TOPO_LEVEL-1) {
+            //if this rank is the head
+            if (to_vrank(rank, ranks, size) == head) {
+                //set its children (all others in the group)
+                for (j=head+1; j<=tail; j++) {
+                    tree->tree_next[tree->tree_nextsize] = to_rank(j, ranks, size);
+                    tree->tree_nextsize+=1;
+                    //printf("[rank %d]: set next %d\n", rank, tree->tree_next[tree->tree_nextsize-1]);
+                }
+            }
+            else{
+                //set its parent to head
+                tree->tree_prev = to_rank(head, ranks, size);
+                //printf("[rank %d]: set prev %d\n", rank, tree->tree_prev);
+            }
+        }
+        
+        free(temp_start_loc);
+    }
+    
+    for (i=0; i<size; i++) {
+        free(topo[i]);
+    }
+    free(topo);
     free_helper(helper);
+    
+    return tree;
 }
 
 ompi_coll_tree_t*
 ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int root );
-
-

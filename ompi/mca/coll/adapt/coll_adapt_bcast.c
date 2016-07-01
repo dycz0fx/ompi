@@ -25,13 +25,11 @@ static void printfno(){
     
 }
 
-
-
 //send call back
 static int send_cb(ompi_request_t *req)
 {
     req->req_complete_cb_called = 1;
-
+    
     mca_coll_adapt_bcast_context_t *context = (mca_coll_adapt_bcast_context_t *) req->req_complete_cb_data;
     
     int err;
@@ -91,14 +89,14 @@ static int send_cb(ompi_request_t *req)
 static int recv_cb(ompi_request_t *req){
     
     req->req_complete_cb_called = 1;
-
+    
     //get necessary info from request
     mca_coll_adapt_bcast_context_t *context = (mca_coll_adapt_bcast_context_t *) req->req_complete_cb_data;
     
     int err, i;
     
     TEST("[%d, %" PRIx64 "]: Recv(cb): segment %d from %d at buff %p\n", ompi_comm_rank(context->con->comm), gettid(), context->frag_id, context->peer, (void *)context->buff);
-
+    
     //store the frag_id to seg array
     opal_mutex_lock (context->con->mutex);
     int num_recv_segs_t = ++(context->con->num_recv_segs);
@@ -182,7 +180,7 @@ static int recv_cb(ompi_request_t *req){
 }
 
 int mca_coll_adapt_bcast(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    return mca_coll_adapt_bcast_binomial(buff, count, datatype, root, comm, module);
+    return mca_coll_adapt_bcast_topoaware_tree(buff, count, datatype, root, comm, module);
 }
 
 
@@ -196,12 +194,12 @@ int mca_coll_adapt_bcast_in_order_binomial(void *buff, int count, struct ompi_da
     ompi_coll_tree_t * tree = ompi_coll_base_topo_build_in_order_bmtree(comm, root);
     return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, tree);
 }
-                         
+
 int mca_coll_adapt_bcast_binary(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     ompi_coll_tree_t * tree = ompi_coll_base_topo_build_tree(2, comm, root);
     return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, tree);
 }
-                         
+
 int mca_coll_adapt_bcast_pipeline(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     ompi_coll_tree_t * tree = ompi_coll_base_topo_build_chain(1, comm, root);
     return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, tree);
@@ -212,17 +210,6 @@ int mca_coll_adapt_bcast_chain(void *buff, int count, struct ompi_datatype_t *da
     return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, tree);
 }
 
-int mca_coll_adapt_bcast_topoaware_tree(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    ompi_coll_tree_t * tree = ompi_coll_base_topo_build_topoware_tree(comm, root);
-    return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, tree);
-}
-
-int mca_coll_adapt_bcast_topoaware_chain(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    ompi_coll_tree_t * tree = ompi_coll_base_topo_build_topoaware_chain(comm, root);
-    return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, tree);
-}
-
-
 int mca_coll_adapt_bcast_linear(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     int fanout = ompi_comm_size(comm) - 1;
     ompi_coll_tree_t * tree;
@@ -232,6 +219,17 @@ int mca_coll_adapt_bcast_linear(void *buff, int count, struct ompi_datatype_t *d
     else{
         tree = ompi_coll_base_topo_build_chain(1, comm, root);
     }
+    return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, tree);
+}
+
+int mca_coll_adapt_bcast_topoaware_tree(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+    ompi_coll_tree_t * tree = ompi_coll_base_topo_build_topoware_tree(comm, root);
+    print_tree(tree, ompi_comm_rank(comm));
+    return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, tree);
+}
+
+int mca_coll_adapt_bcast_topoaware_chain(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+    ompi_coll_tree_t * tree = ompi_coll_base_topo_build_topoaware_chain(comm, root);
     return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, tree);
 }
 
@@ -330,7 +328,7 @@ int mca_coll_adapt_bcast_generic(void *buff, int count, struct ompi_datatype_t *
     
     //set up mutex
     mutex = OBJ_NEW(opal_mutex_t);
-
+    
     ompi_request_t * temp_request = NULL;
     //set up request
     temp_request = OBJ_NEW(ompi_request_t);
@@ -365,7 +363,7 @@ int mca_coll_adapt_bcast_generic(void *buff, int count, struct ompi_datatype_t *
     //if root, send segment to every children.
     
     opal_mutex_lock(mutex);
-
+    
     if (rank == root){
         //handle the situation when num_segs < SEND_NUM
         if (num_segs <= SEND_NUM) {
@@ -476,7 +474,7 @@ int mca_coll_adapt_bcast_generic(void *buff, int count, struct ompi_datatype_t *
         
     }
     
-
+    
     TEST("[%d, %" PRIx64 "]: End of bcast\n", rank, gettid());
     
     if (tree->tree_nextsize != 0) {
@@ -674,7 +672,7 @@ int mca_coll_adapt_bcast_two_trees_generic(void *buff, int count, struct ompi_da
     int * num_sent_segs;
     
     opal_free_list_t ** context_lists; //two free lists contain all the context of call backs
-
+    
     opal_mutex_t * mutex;
     int **recv_arrays = NULL;   //store those segments which are received for two trees
     int **send_arrays = NULL;   //record how many isend has been issued for every child for two trees
@@ -725,7 +723,7 @@ int mca_coll_adapt_bcast_two_trees_generic(void *buff, int count, struct ompi_da
     num_sent_segs = (int *)malloc(sizeof(int) * 2);
     num_sent_segs[0] = 0;
     num_sent_segs[1] = 0;
-
+    
     //set memory for recv_array and send_array, created on heap becasue they are needed to be accessed by other functions, callback function
     recv_arrays = (int **)malloc(sizeof(int *) * 2);
     send_arrays = (int **)malloc(sizeof(int *) * 2);
@@ -776,7 +774,7 @@ int mca_coll_adapt_bcast_two_trees_generic(void *buff, int count, struct ompi_da
     TEST("[%d, %" PRIx64 "]: con->mutex = %p\n", rank, gettid(), (void *)con->mutex);
     
     opal_mutex_lock(mutex);
-
+    
     //if root, send segment to the roots of two trees.
     if (rank == root){
         //handle the situation when num_segs < SEND_NUM
@@ -804,7 +802,7 @@ int mca_coll_adapt_bcast_two_trees_generic(void *buff, int count, struct ompi_da
         }
         con->num_recv_segs[0] = num_segs[0];
         con->num_recv_segs[1] = num_segs[1];
-
+        
         //set send_array
         for (i = 0; i < trees[0]->tree_nextsize; i++) {
             send_arrays[0][i] = min[0];
@@ -915,12 +913,10 @@ int mca_coll_adapt_bcast_two_trees_generic(void *buff, int count, struct ompi_da
                 }
             }
         }
-
+        
         //have not finished sending
         opal_mutex_unlock(mutex);
         ompi_request_wait(&temp_request, MPI_STATUS_IGNORE);
-
-        
     }
     
     TEST("[%d, %" PRIx64 "]: End of bcast\n", rank, gettid());
