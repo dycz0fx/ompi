@@ -496,6 +496,8 @@ static void btl_openib_control(mca_btl_base_module_t* btl,
            trigger credit management (because the rd_credits will
            still be negative), and Bad Things will happen. */
         if (ep->endpoint_posted_recvs) {
+            /* need to hold to lock for both send_cts and connected */
+            OPAL_THREAD_LOCK(&ep->endpoint_lock);
             if (!ep->endpoint_cts_sent) {
                 mca_btl_openib_endpoint_send_cts(ep);
             }
@@ -3771,7 +3773,9 @@ static int btl_openib_component_progress(void)
     for(i = 0; i < mca_btl_openib_component.devices_count; i++) {
         mca_btl_openib_device_t *device =
             (mca_btl_openib_device_t *) opal_pointer_array_get_item(&mca_btl_openib_component.devices, i);
-        count += progress_one_device(device);
+        if (NULL != device) {
+            count += progress_one_device(device);
+        }
     }
 
 #if OPAL_CUDA_SUPPORT /* CUDA_ASYNC_SEND */

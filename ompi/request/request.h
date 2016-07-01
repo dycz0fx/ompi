@@ -379,12 +379,15 @@ static inline int ompi_request_free(ompi_request_t** request)
 
 static inline void ompi_request_wait_completion(ompi_request_t *req)
 {
-    if (opal_using_threads ()) {
+    if (opal_using_threads () && !REQUEST_COMPLETE(req)) {
         ompi_wait_sync_t sync;
         WAIT_SYNC_INIT(&sync, 1);
 
-        if(OPAL_ATOMIC_CMPSET_PTR(&req->req_complete, REQUEST_PENDING, &sync)) {
+        if (OPAL_ATOMIC_CMPSET_PTR(&req->req_complete, REQUEST_PENDING, &sync)) {
             SYNC_WAIT(&sync);
+        } else {
+            /* completed before we had a chance to swap in the sync object */
+            WAIT_SYNC_SIGNALLED(&sync);
         }
 
         assert(REQUEST_COMPLETE(req));
@@ -420,8 +423,8 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
     ompi_request_completed++;
     if( OPAL_LIKELY(with_signal) ) {
         if(!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED)) {
-            ompi_wait_sync_t *tmp_sync = (ompi_wait_sync_t *) OPAL_ATOMIC_SWP_PTR(&request->req_complete,
-                                                                                  REQUEST_COMPLETED);
+            ompi_wait_sync_t *tmp_sync = (ompi_wait_sync_t *) OPAL_ATOMIC_SWAP_PTR(&request->req_complete,
+                                                                                   REQUEST_COMPLETED);
             /* In the case where another thread concurrently changed the request to REQUEST_PENDING */
             if( REQUEST_PENDING != tmp_sync )
                 wait_sync_update(tmp_sync, 1, request->req_status.MPI_ERROR);

@@ -886,13 +886,11 @@ static int rdmacm_module_start_connect(opal_btl_openib_connect_base_module_t *cp
     return OPAL_SUCCESS;
 
 out:
-    for (item = opal_list_remove_first(&(contents->ids));
-         NULL != item;
-         item = opal_list_remove_first(&(contents->ids))) {
+    while (NULL != (item = opal_list_remove_first (&contents->ids))) {
         OBJ_RELEASE(item);
-   }
+    }
 
-   return rc;
+    return rc;
 }
 
 #if !BTL_OPENIB_RDMACM_IB_ADDR
@@ -1136,7 +1134,7 @@ static void *call_disconnect_callback(int fd, int flags, void *v)
 {
     rdmacm_contents_t *contents = (rdmacm_contents_t *) v;
     void *tmp = NULL;
-    id_context_t *context = (id_context_t*) v;
+    id_context_t *context;
     opal_list_item_t *item;
 
     pthread_mutex_lock (&rdmacm_disconnect_lock);
@@ -1175,7 +1173,7 @@ static void *call_disconnect_callback(int fd, int flags, void *v)
  */
 static int rdmacm_endpoint_finalize(struct mca_btl_base_endpoint_t *endpoint)
 {
-    rdmacm_contents_t *contents;
+    rdmacm_contents_t *contents = NULL, *item;
     opal_event_t event;
 
     BTL_VERBOSE(("Start disconnecting..."));
@@ -1195,8 +1193,9 @@ static int rdmacm_endpoint_finalize(struct mca_btl_base_endpoint_t *endpoint)
      * main thread and service thread.
      */
     opal_mutex_lock(&client_list_lock);
-    OPAL_LIST_FOREACH(contents, &client_list, rdmacm_contents_t) {
-        if (endpoint == contents->endpoint) {
+    OPAL_LIST_FOREACH(item, &client_list, rdmacm_contents_t) {
+        if (endpoint == item->endpoint) {
+            contents = item;
             opal_list_remove_item(&client_list, (opal_list_item_t *) contents);
             contents->on_client_list = false;
 
@@ -1225,12 +1224,14 @@ static int rdmacm_endpoint_finalize(struct mca_btl_base_endpoint_t *endpoint)
     opal_atomic_wmb();
     opal_mutex_unlock(&client_list_lock);
 
-    /* Now wait for all the disconnect callbacks to occur */
-    pthread_mutex_lock(&rdmacm_disconnect_lock);
-    while (opal_list_get_size (&contents->ids)) {
-        pthread_cond_wait (&rdmacm_disconnect_cond, &rdmacm_disconnect_lock);
+    if (NULL != contents) {
+        /* Now wait for all the disconnect callbacks to occur */
+        pthread_mutex_lock(&rdmacm_disconnect_lock);
+        while (opal_list_get_size (&contents->ids)) {
+            pthread_cond_wait (&rdmacm_disconnect_cond, &rdmacm_disconnect_lock);
+        }
+        pthread_mutex_unlock(&rdmacm_disconnect_lock);
     }
-    pthread_mutex_unlock(&rdmacm_disconnect_lock);
 
     OPAL_OUTPUT((-1, "MAIN Endpoint finished finalizing"));
     return OPAL_SUCCESS;
@@ -1245,6 +1246,7 @@ static void *local_endpoint_cpc_complete(void *context)
 
     OPAL_OUTPUT((-1, "MAIN local_endpoint_cpc_complete to %s",
                  opal_get_proc_hostname(endpoint->endpoint_proc->proc_opal)));
+    OPAL_THREAD_LOCK(&endpoint->endpoint_lock);
     mca_btl_openib_endpoint_cpc_complete(endpoint);
 
     return NULL;
@@ -1325,12 +1327,10 @@ static int rdmacm_disconnected(id_context_t *context)
     /* If this was a client thread, then it *may* still be listed in a
        contents->ids list. */
 
-    context->already_disconnected = true;
-    if (NULL != context) {
-        OPAL_OUTPUT((-1, "SERVICE Releasing context because of DISCONNECT: context %p, id %p",
-                     (void*) context, (void*) context->id));
-        OBJ_RELEASE(context);
-    }
+    OPAL_OUTPUT((-1, "SERVICE Releasing context because of DISCONNECT: context %p, id %p",
+                 (void*) context, (void*) context->id));
+    OBJ_RELEASE(context);
+
     return OPAL_SUCCESS;
 }
 
