@@ -114,12 +114,12 @@ static int send_cb(ompi_request_t *req){
     //check whether signal the condition, non root and sent all the segments
     if (context->con->tree->tree_root != context->con->rank && num_sent == context->con->num_segs) {
         //printf("[%d]: Singal in send\n", ompi_comm_rank(context->con->comm));
-        opal_condition_t *temp_cond = context->con->request_cond;
+        ompi_request_t *temp_req = context->con->request;
         opal_free_list_t * temp = context->con->context_list;
         OBJ_RELEASE(context->con);
         //printf("return context_list\n");
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
-        opal_condition_signal(temp_cond);
+        ompi_request_complete(temp_req, 1);
     }
     else{
         opal_free_list_t * temp = context->con->context_list;
@@ -243,14 +243,14 @@ static int recv_cb(ompi_request_t *req){
     if (context->con->tree->tree_root == context->con->rank && num_recv_segs_t == context->con->num_segs * context->con->tree->tree_nextsize) {
         opal_mutex_unlock (context->con->mutex_num_recv_segs);
         //printf("[%d]: Singal in recv\n", ompi_comm_rank(context->con->comm));
-        opal_condition_t *temp_cond = context->con->request_cond;
+        ompi_request_t *temp_req = context->con->request;
         //printf("return inbuf\n");
         opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)context->inbuf);
         opal_free_list_t * temp = context->con->context_list;
         OBJ_RELEASE(context->con);
         //printf("return context_list\n");
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
-        opal_condition_signal(temp_cond);
+        ompi_request_complete(temp_req, 1);
     }
     else{
         opal_mutex_unlock (context->con->mutex_num_recv_segs);
@@ -267,7 +267,7 @@ static int recv_cb(ompi_request_t *req){
 }
 
 int mca_coll_adapt_reduce(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    return mca_coll_adapt_reduce_binomial(sbuf, rbuf, count, dtype, op, root, comm, module);
+    return mca_coll_adapt_reduce_topoaware_chain(sbuf, rbuf, count, dtype, op, root, comm, module);
 }
 
 int mca_coll_adapt_reduce_binomial(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
@@ -314,6 +314,21 @@ int mca_coll_adapt_reduce_linear(const void *sbuf, void *rbuf, int count, struct
     return r;
 }
 
+int mca_coll_adapt_reduce_topoaware_linear(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+    ompi_coll_tree_t * tree = ompi_coll_base_topo_build_topoaware_linear(comm, root);
+    int r =  mca_coll_adapt_reduce_generic(sbuf, rbuf, count, dtype, op, root, comm, module, tree);
+    ompi_coll_base_topo_destroy_tree(&tree);
+    return r;
+}
+
+int mca_coll_adapt_reduce_topoaware_chain(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+    ompi_coll_tree_t * tree = ompi_coll_base_topo_build_topoaware_chain(comm, root);
+    int r =  mca_coll_adapt_reduce_generic(sbuf, rbuf, count, dtype, op, root, comm, module, tree);
+    ompi_coll_base_topo_destroy_tree(&tree);
+    return r;
+}
+
+
 
 int mca_coll_adapt_reduce_generic(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t* tree){
     
@@ -329,7 +344,6 @@ int mca_coll_adapt_reduce_generic(const void *sbuf, void *rbuf, int count, struc
     opal_mutex_t * mutex_recv_list;
     opal_mutex_t * mutex_num_recv_segs;
     opal_mutex_t ** mutex_op_list;
-    opal_mutex_t * mutex_condition_wait;      //for condition wait
     opal_list_t * recv_list;     //a list to store the segments need to be sent
     
     // Determine number of segments and number of elements sent per operation
@@ -377,9 +391,17 @@ int mca_coll_adapt_reduce_generic(const void *sbuf, void *rbuf, int count, struc
         next_recv_segs = NULL;
     }
     
-    //set up condition
-    opal_condition_t request_cond;
-    OBJ_CONSTRUCT(&request_cond,opal_condition_t);
+    ompi_request_t * temp_request = NULL;
+    //set up request
+    temp_request = OBJ_NEW(ompi_request_t);
+    OMPI_REQUEST_INIT(temp_request, false);
+    temp_request->req_type = 0;
+    temp_request->req_free = adapt_request_free;
+    temp_request->req_status.MPI_SOURCE = 0;
+    temp_request->req_status.MPI_TAG = 0;
+    temp_request->req_status.MPI_ERROR = 0;
+    temp_request->req_status._cancelled = 0;
+    temp_request->req_status._ucount = 0;
     
     //set up mutex
     mutex_recv_list = OBJ_NEW(opal_mutex_t);
@@ -388,7 +410,6 @@ int mca_coll_adapt_reduce_generic(const void *sbuf, void *rbuf, int count, struc
     for (i=0; i<num_segs; i++) {
         mutex_op_list[i] = OBJ_NEW(opal_mutex_t);
     }
-    mutex_condition_wait = OBJ_NEW(opal_mutex_t);
     
     //create recv_list
     recv_list = OBJ_NEW(opal_list_t);
@@ -402,7 +423,7 @@ int mca_coll_adapt_reduce_generic(const void *sbuf, void *rbuf, int count, struc
     con->comm = comm;
     con->segment_increment = segment_increment;
     con->num_segs = num_segs;
-    con->request_cond = &request_cond;
+    con->request = temp_request;
     con->rank = rank;
     con->context_list = context_list;
     con->num_recv_segs = 0;
@@ -488,21 +509,6 @@ int mca_coll_adapt_reduce_generic(const void *sbuf, void *rbuf, int count, struc
             }
         }
         
-        OPAL_THREAD_LOCK(mutex_condition_wait);
-        //if root
-        if (root == rank) {
-            //has received all the segments
-            while (con->num_recv_segs < num_segs * tree->tree_nextsize) {
-                opal_condition_wait(&request_cond, mutex_condition_wait);
-            }
-        }
-        //non root, non leaf
-        else{
-            //has sent all the segments
-            while (con->num_sent_segs < num_segs) {
-                opal_condition_wait(&request_cond, mutex_condition_wait);
-            }
-        }
     }
     
     //leaf nodes
@@ -564,15 +570,10 @@ int mca_coll_adapt_reduce_generic(const void *sbuf, void *rbuf, int count, struc
             }
         }
         
-        OPAL_THREAD_LOCK(mutex_condition_wait);
-        //leaf
-        while (con->num_sent_segs < num_segs) {
-            opal_condition_wait(&request_cond, mutex_condition_wait);
-        }
     }
     
+    ompi_request_wait(&temp_request, MPI_STATUS_IGNORE);
     
-    OPAL_THREAD_UNLOCK(mutex_condition_wait);
     if (accumbuf_free != NULL) {
         free(accumbuf_free);
     }
@@ -584,15 +585,13 @@ int mca_coll_adapt_reduce_generic(const void *sbuf, void *rbuf, int count, struc
     free(mutex_op_list);
     OBJ_RELEASE(mutex_num_recv_segs);
     OBJ_RELEASE(mutex_recv_list);
-    OBJ_RELEASE(mutex_condition_wait);
-    OBJ_DESTRUCT(&request_cond);
     if (tree->tree_nextsize > 0) {
         OBJ_RELEASE(inbuf_list);
         free(next_recv_segs);
     }
     OBJ_RELEASE(context_list);
     return MPI_SUCCESS;
-    
-    
 }
+
+
 

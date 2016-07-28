@@ -95,7 +95,7 @@ struct mca_coll_adapt_constant_reduce_context_s {
     ompi_communicator_t * comm;
     int segment_increment;      //increment of each segment
     int num_segs;
-    opal_condition_t * request_cond;
+    ompi_request_t * request;
     int rank;      //change, unused
     opal_free_list_t * context_list;
     int32_t num_recv_segs; //store the length of the fragment array, how many fragments are recevied

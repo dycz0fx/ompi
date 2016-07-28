@@ -180,7 +180,7 @@ static int recv_cb(ompi_request_t *req){
 }
 
 int mca_coll_adapt_bcast(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    return mca_coll_adapt_bcast_topoaware_tree(buff, count, datatype, root, comm, module);
+    return mca_coll_adapt_bcast_chain(buff, count, datatype, root, comm, module);
 }
 
 
@@ -222,14 +222,15 @@ int mca_coll_adapt_bcast_linear(void *buff, int count, struct ompi_datatype_t *d
     return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, tree);
 }
 
-int mca_coll_adapt_bcast_topoaware_tree(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    ompi_coll_tree_t * tree = ompi_coll_base_topo_build_topoware_tree(comm, root);
-    print_tree(tree, ompi_comm_rank(comm));
+int mca_coll_adapt_bcast_topoaware_linear(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+    ompi_coll_tree_t * tree = ompi_coll_base_topo_build_topoaware_linear(comm, root);
+    //print_tree(tree, ompi_comm_rank(comm));
     return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, tree);
 }
 
 int mca_coll_adapt_bcast_topoaware_chain(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     ompi_coll_tree_t * tree = ompi_coll_base_topo_build_topoaware_chain(comm, root);
+    //print_tree(tree, ompi_comm_rank(comm));
     return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, tree);
 }
 
