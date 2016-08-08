@@ -26,6 +26,7 @@
 #include "mpi.h"
 #include "ompi/constants.h"
 #include "ompi/mca/fcoll/fcoll.h"
+#include "ompi/mca/fcoll/base/fcoll_base_coll_array.h"
 #include "ompi/mca/io/ompio/io_ompio.h"
 #include "ompi/mca/io/io.h"
 #include "math.h"
@@ -102,7 +103,7 @@ mca_fcoll_static_file_read_all (mca_io_ompio_file_t *fh,
     double read_time = 0.0, start_read_time = 0.0, end_read_time = 0.0;
     double rcomm_time = 0.0, start_rcomm_time = 0.0, end_rcomm_time = 0.0;
     double read_exch = 0.0, start_rexch = 0.0, end_rexch = 0.0;
-    mca_io_ompio_print_entry nentry;
+    mca_common_ompio_print_entry nentry;
 #endif
 #if DEBUG_ON
     MPI_Aint gc_in;
@@ -274,14 +275,14 @@ mca_fcoll_static_file_read_all (mca_io_ompio_file_t *fh,
     }
 
 
-    iovec_count_per_process = (int *) malloc (fh->f_procs_per_group * sizeof(int));
+    iovec_count_per_process = (int *) calloc (fh->f_procs_per_group, sizeof(int));
     if (NULL == iovec_count_per_process){
         opal_output (1, "OUT OF MEMORY\n");
         ret = OMPI_ERR_OUT_OF_RESOURCE;
         goto exit;
     }
 
-    displs = (int *) malloc (fh->f_procs_per_group * sizeof(int));
+    displs = (int *) calloc (fh->f_procs_per_group, sizeof(int));
     if (NULL == displs){
         opal_output (1, "OUT OF MEMORY\n");
         ret = OMPI_ERR_OUT_OF_RESOURCE;
@@ -291,16 +292,16 @@ mca_fcoll_static_file_read_all (mca_io_ompio_file_t *fh,
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
     start_rexch = MPI_Wtime();
 #endif
-    ret = fh->f_allgather_array (&iov_size,
-                                 1,
-                                 MPI_INT,
-                                 iovec_count_per_process,
-                                 1,
-                                 MPI_INT,
-                                 fh->f_aggregator_index,
-                                 fh->f_procs_in_group,
-                                 fh->f_procs_per_group,
-                                 fh->f_comm);
+    ret = fcoll_base_coll_allgather_array (&iov_size,
+                                           1,
+                                           MPI_INT,
+                                           iovec_count_per_process,
+                                           1,
+                                           MPI_INT,
+                                           fh->f_aggregator_index,
+                                           fh->f_procs_in_group,
+                                           fh->f_procs_per_group,
+                                           fh->f_comm);
 
     if( OMPI_SUCCESS != ret){
         goto exit;
@@ -334,17 +335,17 @@ mca_fcoll_static_file_read_all (mca_io_ompio_file_t *fh,
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
     start_rexch = MPI_Wtime();
 #endif
-    ret = fh->f_gatherv_array (local_iov_array,
-                               iov_size,
-                               io_array_type,
-                               global_iov_array,
-                               iovec_count_per_process,
-                               displs,
-                               io_array_type,
-                               fh->f_aggregator_index,
-                               fh->f_procs_in_group,
-                               fh->f_procs_per_group,
-                               fh->f_comm);
+    ret = fcoll_base_coll_gatherv_array (local_iov_array,
+                                         iov_size,
+                                         io_array_type,
+                                         global_iov_array,
+                                         iovec_count_per_process,
+                                         displs,
+                                         io_array_type,
+                                         fh->f_aggregator_index,
+                                         fh->f_procs_in_group,
+                                         fh->f_procs_per_group,
+                                         fh->f_comm);
 
     if (OMPI_SUCCESS != ret){
         fprintf(stderr,"global_iov_array gather error!\n");
@@ -493,16 +494,16 @@ mca_fcoll_static_file_read_all (mca_io_ompio_file_t *fh,
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
     start_rexch = MPI_Wtime();
 #endif
-        fh->f_gather_array (&bytes_to_read_in_cycle,
-                            1,
-                            MPI_INT,
-                            bytes_per_process,
-                            1,
-                            MPI_INT,
-                            fh->f_aggregator_index,
-                            fh->f_procs_in_group,
-                            fh->f_procs_per_group,
-                            fh->f_comm);
+        fcoll_base_coll_gather_array (&bytes_to_read_in_cycle,
+                                      1,
+                                      MPI_INT,
+                                      bytes_per_process,
+                                      1,
+                                      MPI_INT,
+                                      fh->f_aggregator_index,
+                                      fh->f_procs_in_group,
+                                      fh->f_procs_per_group,
+                                      fh->f_comm);
 
 #if OMPIO_FCOLL_WANT_TIME_BREAKDOWN
         end_rcomm_time = MPI_Wtime();
@@ -918,9 +919,9 @@ mca_fcoll_static_file_read_all (mca_io_ompio_file_t *fh,
     else
         nentry.aggregator = 0;
     nentry.nprocs_for_coll = static_num_io_procs;
-    if (!fh->f_full_print_queue(READ_PRINT_QUEUE)){
-        fh->f_register_print_entry(READ_PRINT_QUEUE,
-                                   nentry);
+    if (!mca_common_ompio_full_print_queue(fh->f_coll_read_time)){
+        mca_common_ompio_register_print_entry(fh->f_coll_read_time,
+                                              nentry);
     }
 #endif
 

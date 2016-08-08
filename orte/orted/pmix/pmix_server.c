@@ -64,6 +64,7 @@
 #include "orte/mca/rml/rml.h"
 #include "orte/mca/rml/base/rml_contact.h"
 #include "orte/util/name_fns.h"
+#include "orte/util/proc_info.h"
 #include "orte/util/session_dir.h"
 #include "orte/util/show_help.h"
 #include "orte/runtime/orte_globals.h"
@@ -151,11 +152,18 @@ static void eviction_cbfunc(struct opal_hotel_t *hotel,
                             int room_num, void *occupant)
 {
     pmix_server_req_t *req = (pmix_server_req_t*)occupant;
+    bool timeout = false;
     int rc;
 
     /* decrement the request timeout */
     req->timeout -= orte_pmix_server_globals.timeout;
-    if (0 < req->timeout) {
+    if (req->timeout > 0) {
+        req->timeout -= orte_pmix_server_globals.timeout;
+        if (0 >= req->timeout) {
+            timeout = true;
+        }
+    }
+    if (!timeout) {
         /* not done yet - check us back in */
         if (OPAL_SUCCESS == (rc = opal_hotel_checkin(&orte_pmix_server_globals.reqs, req, &req->room_num))) {
             return;
@@ -242,10 +250,23 @@ int pmix_server_init(void)
         kv->type = OPAL_STRING;
         opal_list_append(&info, &kv->super);
     }
+    /* tell the server to allow tool connections */
     kv = OBJ_NEW(opal_value_t);
     kv->key = strdup(OPAL_PMIX_SERVER_TOOL_SUPPORT);
     kv->type = OPAL_BOOL;
     kv->data.flag = true;
+    opal_list_append(&info, &kv->super);
+    /* tell the server our temp directory */
+    kv = OBJ_NEW(opal_value_t);
+    kv->key = strdup(OPAL_PMIX_SERVER_TMPDIR);
+    kv->type = OPAL_STRING;
+    kv->data.string = strdup(orte_process_info.tmpdir_base);
+    opal_list_append(&info, &kv->super);
+    /* use the same for the system temp directory */
+    kv = OBJ_NEW(opal_value_t);
+    kv->key = strdup(OPAL_PMIX_SYSTEM_TMPDIR);
+    kv->type = OPAL_STRING;
+    kv->data.string = strdup(orte_process_info.tmpdir_base);
     opal_list_append(&info, &kv->super);
 
     /* setup the local server */

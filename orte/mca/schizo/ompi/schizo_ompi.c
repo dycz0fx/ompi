@@ -411,12 +411,16 @@ static opal_cmd_line_init_t cmd_line_init[] = {
       "Report events to a tool listening at the specified URI" },
 
     { "orte_enable_recovery", '\0', "enable-recovery", "enable-recovery", 0,
-      &orte_cmd_options.enable_recovery, OPAL_CMD_LINE_TYPE_BOOL,
+      NULL, OPAL_CMD_LINE_TYPE_BOOL,
       "Enable recovery from process failure [Default = disabled]" },
 
     { "orte_max_restarts", '\0', "max-restarts", "max-restarts", 1,
       NULL, OPAL_CMD_LINE_TYPE_INT,
       "Max number of times to restart a failed process" },
+
+    { NULL, '\0', "continuous", "continuous", 0,
+      &orte_cmd_options.continuous, OPAL_CMD_LINE_TYPE_BOOL,
+      "Job is to run until explicitly terminated" },
 
     { "orte_hetero_nodes", '\0', NULL, "hetero-nodes", 0,
       NULL, OPAL_CMD_LINE_TYPE_BOOL,
@@ -1106,7 +1110,7 @@ static int setup_child(orte_job_t *jdata,
     param = NULL;
     if (ORTE_SUCCESS != (rc = orte_session_dir_get_name(&param, &value, NULL,
                                                         orte_process_info.nodename,
-                                                        NULL, &child->name))) {
+                                                        &child->name))) {
         ORTE_ERROR_LOG(rc);
         if (NULL != value) {
             free(value);

@@ -2,7 +2,7 @@
 /*
  * Copyright (c) 2007      The Trustees of Indiana University.
  *                         All rights reserved.
- * Copyright (c) 2011      Cisco Systems, Inc.  All rights reserved.
+ * Copyright (c) 2011-2016 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2011-2013 Los Alamos National Security, LLC. All
  *                         rights reserved.
  * Copyright (c) 2013-2016 Intel, Inc.  All rights reserved.
@@ -45,6 +45,7 @@ static int s2_abort(int flag, const char msg[],
 static int s2_commit(void);
 static int s2_fencenb(opal_list_t *procs, int collect_data,
                       opal_pmix_op_cbfunc_t cbfunc, void *cbdata);
+static int s2_fence(opal_list_t *procs, int collect_data);
 static int s2_put(opal_pmix_scope_t scope,
                   opal_value_t *kv);
 static int s2_get(const opal_process_name_t *id,
@@ -68,6 +69,7 @@ const opal_pmix_base_module_t opal_pmix_s2_module = {
     .abort = s2_abort,
     .commit = s2_commit,
     .fence_nb = s2_fencenb,
+    .fence = s2_fence,
     .put = s2_put,
     .get = s2_get,
     .publish = s2_publish,
@@ -125,9 +127,9 @@ static bool got_modex_data = false;
 static char* pmix_error(int pmix_err);
 #define OPAL_PMI_ERROR(pmi_err, pmi_func)                       \
     do {                                                        \
-        opal_output(0, "%s [%s:%d:%s]: %s\n",                   \
-                    pmi_func, __FILE__, __LINE__, __func__,     \
-                    pmix_error(pmi_err));                        \
+    opal_output(0, "%s [%s:%d:%s]: %s\n",                   \
+    pmi_func, __FILE__, __LINE__, __func__,     \
+    pmix_error(pmi_err));                        \
     } while(0);
 
 static int kvs_put(const char key[], const char value[])
@@ -171,6 +173,7 @@ static int s2_init(void)
     char **localranks;
     char *str;
     char nmtmp[64];
+    opal_process_name_t wildcard_rank;
 
     /* if we can't startup PMI, we can't be used */
     if ( PMI2_Initialized () ) {
@@ -230,6 +233,10 @@ static int s2_init(void)
                         "%s pmix:s2: assigned tmp name",
                         OPAL_NAME_PRINT(s2_pname));
 
+    /* setup wildcard rank*/
+    wildcard_rank = OPAL_PROC_MY_NAME;
+    wildcard_rank.vpid = OPAL_VPID_WILDCARD;
+
     /* Slurm PMI provides the job id as an integer followed
      * by a '.', followed by essentially a stepid. The first integer
      * defines an overall job number. The second integer is the number of
@@ -239,7 +246,7 @@ static int s2_init(void)
     kv.key = strdup(OPAL_PMIX_JOBID);
     kv.type = OPAL_UINT32;
     kv.data.uint32 = s2_pname.jobid;
-    if (OPAL_SUCCESS != (ret = opal_pmix_base_store(&OPAL_PROC_MY_NAME, &kv))) {
+    if (OPAL_SUCCESS != (ret = opal_pmix_base_store(&wildcard_rank, &kv))) {
         OPAL_ERROR_LOG(ret);
         OBJ_DESTRUCT(&kv);
         goto err_exit;
@@ -251,7 +258,7 @@ static int s2_init(void)
     kv.key = strdup(OPAL_PMIX_JOB_SIZE);
     kv.type = OPAL_UINT32;
     kv.data.uint32 = size;
-    if (OPAL_SUCCESS != (rc = opal_pmix_base_store(&OPAL_PROC_MY_NAME, &kv))) {
+    if (OPAL_SUCCESS != (rc = opal_pmix_base_store(&wildcard_rank, &kv))) {
         OPAL_ERROR_LOG(rc);
         OBJ_DESTRUCT(&kv);
         goto err_exit;
@@ -280,7 +287,7 @@ static int s2_init(void)
     kv.key = strdup(OPAL_PMIX_UNIV_SIZE);
     kv.type = OPAL_UINT32;
     kv.data.uint32 = atoi(buf);
-    if (OPAL_SUCCESS != (rc = opal_pmix_base_store(&OPAL_PROC_MY_NAME, &kv))) {
+    if (OPAL_SUCCESS != (rc = opal_pmix_base_store(&wildcard_rank, &kv))) {
         OPAL_ERROR_LOG(rc);
         OBJ_DESTRUCT(&kv);
         goto err_exit;
@@ -291,7 +298,7 @@ static int s2_init(void)
     kv.key = strdup(OPAL_PMIX_MAX_PROCS);
     kv.type = OPAL_UINT32;
     kv.data.uint32 = atoi(buf);
-    if (OPAL_SUCCESS != (ret = opal_pmix_base_store(&OPAL_PROC_MY_NAME, &kv))) {
+    if (OPAL_SUCCESS != (ret = opal_pmix_base_store(&wildcard_rank, &kv))) {
         OPAL_ERROR_LOG(ret);
         OBJ_DESTRUCT(&kv);
         goto err_exit;
@@ -325,7 +332,7 @@ static int s2_init(void)
     kv.key = strdup(OPAL_PMIX_LOCAL_SIZE);
     kv.type = OPAL_UINT32;
     kv.data.uint32 = s2_nlranks;
-    if (OPAL_SUCCESS != (rc = opal_pmix_base_store(&OPAL_PROC_MY_NAME, &kv))) {
+    if (OPAL_SUCCESS != (rc = opal_pmix_base_store(&wildcard_rank, &kv))) {
         OPAL_ERROR_LOG(rc);
         OBJ_DESTRUCT(&kv);
         goto err_exit;
@@ -357,7 +364,7 @@ static int s2_init(void)
         kv.key = strdup(OPAL_PMIX_LOCAL_PEERS);
         kv.type = OPAL_STRING;
         kv.data.string = str;
-        if (OPAL_SUCCESS != (ret = opal_pmix_base_store(&OPAL_PROC_MY_NAME, &kv))) {
+        if (OPAL_SUCCESS != (ret = opal_pmix_base_store(&wildcard_rank, &kv))) {
             OPAL_ERROR_LOG(ret);
             OBJ_DESTRUCT(&kv);
             goto err_exit;
@@ -403,7 +410,7 @@ static int s2_init(void)
     ++pmix_init_count;
 
     return OPAL_SUCCESS;
- err_exit:
+err_exit:
     PMI2_Finalize();
     return ret;
 }
@@ -452,8 +459,8 @@ static int s2_spawn(opal_list_t *jobinfo, opal_list_t *apps, opal_jobid_t *jobid
     preput_vector_size = opal_list_get_size(preput_keyval_vector);
     rc = PMI2_Job_Spawn(count, cmds, argcs, argvs, maxprocs, info_keyval_sizes, info_keyval_vector, (int)preput_vector_size, preput_keyval_vector, jobId, jobIdSize, errors);
     if( PMI2_SUCCESS != rc ) {
-        OPAL_PMI_ERROR(rc, "PMI2_Job_Spawn");
-        return OPAL_ERROR;
+    OPAL_PMI_ERROR(rc, "PMI2_Job_Spawn");
+    return OPAL_ERROR;
     }*/
     return OPAL_ERR_NOT_IMPLEMENTED;
 }
@@ -510,8 +517,8 @@ static int s2_put(opal_pmix_scope_t scope,
     int rc;
 
     opal_output_verbose(2, opal_pmix_base_framework.framework_output,
-            "%s pmix:s2 put for key %s",
-            OPAL_NAME_PRINT(OPAL_PROC_MY_NAME), kv->key);
+                        "%s pmix:s2 put for key %s",
+                        OPAL_NAME_PRINT(OPAL_PROC_MY_NAME), kv->key);
 
     if (OPAL_SUCCESS != (rc = opal_pmix_base_store_encoded (kv->key, (void*)&kv->data, kv->type, &pmix_packed_data, &pmix_packed_data_offset))) {
         OPAL_ERROR_LOG(rc);
@@ -525,8 +532,8 @@ static int s2_put(opal_pmix_scope_t scope,
 
     if (((pmix_packed_data_offset/3)*4) + pmix_packed_encoded_data_offset < pmix_vallen_max) {
         /* this meta-key is still being filled,
-         * nothing to put yet
-         */
+     * nothing to put yet
+     */
         return OPAL_SUCCESS;
     }
 
@@ -545,7 +552,7 @@ static int s2_commit(void)
 static void fencenb(int sd, short args, void *cbdata)
 {
     pmi_opcaddy_t *op = (pmi_opcaddy_t*)cbdata;
-    int rc;
+    int rc = OPAL_SUCCESS;
     int32_t i;
     opal_value_t *kp, kvn;
     opal_hwloc_locality_t locality;
@@ -573,7 +580,7 @@ static void fencenb(int sd, short args, void *cbdata)
     if (!got_modex_data) {
         got_modex_data = true;
         /* we only need to set locality for each local rank as "not found"
-         * equates to "non-local" */
+     * equates to "non-local" */
         for (i=0; i < s2_nlranks; i++) {
             pname.vpid = s2_lranks[i];
             rc = opal_pmix_base_cache_keys_locally(&s2_pname, OPAL_PMIX_CPUSET,
@@ -584,8 +591,8 @@ static void fencenb(int sd, short args, void *cbdata)
             }
             if (NULL == kp || NULL == kp->data.string) {
                 /* if we share a node, but we don't know anything more, then
-                 * mark us as on the node as this is all we know
-                 */
+         * mark us as on the node as this is all we know
+         */
                 locality = OPAL_PROC_ON_CLUSTER | OPAL_PROC_ON_CU | OPAL_PROC_ON_NODE;
             } else {
                 /* determine relative location on our node */
@@ -611,16 +618,16 @@ static void fencenb(int sd, short args, void *cbdata)
         }
     }
 
-  cleanup:
+cleanup:
     if (NULL != op->opcbfunc) {
-      op->opcbfunc(rc, op->cbdata);
+        op->opcbfunc(rc, op->cbdata);
     }
     OBJ_RELEASE(op);
     return;
 }
 
 static int s2_fencenb(opal_list_t *procs, int collect_data,
-                    opal_pmix_op_cbfunc_t cbfunc, void *cbdata)
+                      opal_pmix_op_cbfunc_t cbfunc, void *cbdata)
 {
     pmi_opcaddy_t *op;
 
@@ -634,6 +641,35 @@ static int s2_fencenb(opal_list_t *procs, int collect_data,
 
     return OPAL_SUCCESS;
 }
+
+#define S2_WAIT_FOR_COMPLETION(a)               \
+    do {                                        \
+    while ((a)) {                           \
+    usleep(10);                         \
+    }                                       \
+    } while (0)
+
+struct fence_result {
+    volatile int flag;
+    int status;
+};
+
+static void fence_release(int status, void *cbdata)
+{
+    struct fence_result *res = (struct fence_result*)cbdata;
+    res->status = status;
+    opal_atomic_wmb();
+    res->flag = 0;
+}
+
+static int s2_fence(opal_list_t *procs, int collect_data)
+{
+    struct fence_result result = { 1, OPAL_SUCCESS };
+    s2_fencenb(procs, collect_data, fence_release, (void*)&result);
+    S2_WAIT_FOR_COMPLETION(result.flag);
+    return result.status;
+}
+
 
 static int s2_get(const opal_process_name_t *id,
                   const char *key, opal_list_t *info,
@@ -706,22 +742,22 @@ static char* pmix_error(int pmix_err)
     char * err_msg;
 
     switch(pmix_err) {
-        case PMI2_FAIL: err_msg = "Operation failed"; break;
-        case PMI2_ERR_INIT: err_msg = "PMI is not initialized"; break;
-        case PMI2_ERR_NOMEM: err_msg = "Input buffer not large enough"; break;
-        case PMI2_ERR_INVALID_ARG: err_msg = "Invalid argument"; break;
-        case PMI2_ERR_INVALID_KEY: err_msg = "Invalid key argument"; break;
-        case PMI2_ERR_INVALID_KEY_LENGTH: err_msg = "Invalid key length argument"; break;
-        case PMI2_ERR_INVALID_VAL: err_msg = "Invalid value argument"; break;
-        case PMI2_ERR_INVALID_VAL_LENGTH: err_msg = "Invalid value length argument"; break;
-        case PMI2_ERR_INVALID_LENGTH: err_msg = "Invalid length argument"; break;
-        case PMI2_ERR_INVALID_NUM_ARGS: err_msg = "Invalid number of arguments"; break;
-        case PMI2_ERR_INVALID_ARGS: err_msg = "Invalid args argument"; break;
-        case PMI2_ERR_INVALID_NUM_PARSED: err_msg = "Invalid num_parsed length argument"; break;
-        case PMI2_ERR_INVALID_KEYVALP: err_msg = "Invalid keyvalp argument"; break;
-        case PMI2_ERR_INVALID_SIZE: err_msg = "Invalid size argument"; break;
-        case PMI2_SUCCESS: err_msg = "Success"; break;
-        default: err_msg = "Unkown error";
+    case PMI2_FAIL: err_msg = "Operation failed"; break;
+    case PMI2_ERR_INIT: err_msg = "PMI is not initialized"; break;
+    case PMI2_ERR_NOMEM: err_msg = "Input buffer not large enough"; break;
+    case PMI2_ERR_INVALID_ARG: err_msg = "Invalid argument"; break;
+    case PMI2_ERR_INVALID_KEY: err_msg = "Invalid key argument"; break;
+    case PMI2_ERR_INVALID_KEY_LENGTH: err_msg = "Invalid key length argument"; break;
+    case PMI2_ERR_INVALID_VAL: err_msg = "Invalid value argument"; break;
+    case PMI2_ERR_INVALID_VAL_LENGTH: err_msg = "Invalid value length argument"; break;
+    case PMI2_ERR_INVALID_LENGTH: err_msg = "Invalid length argument"; break;
+    case PMI2_ERR_INVALID_NUM_ARGS: err_msg = "Invalid number of arguments"; break;
+    case PMI2_ERR_INVALID_ARGS: err_msg = "Invalid args argument"; break;
+    case PMI2_ERR_INVALID_NUM_PARSED: err_msg = "Invalid num_parsed length argument"; break;
+    case PMI2_ERR_INVALID_KEYVALP: err_msg = "Invalid keyvalp argument"; break;
+    case PMI2_ERR_INVALID_SIZE: err_msg = "Invalid size argument"; break;
+    case PMI2_SUCCESS: err_msg = "Success"; break;
+    default: err_msg = "Unkown error";
     }
     return err_msg;
 }

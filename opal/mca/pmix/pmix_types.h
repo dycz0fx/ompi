@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2014-2015 Intel, Inc. All rights reserved.
+ * Copyright (c) 2014-2016 Intel, Inc. All rights reserved.
+ * Copyright (c) 2016      Research Organization for Information Science
+ *                         and Technology (RIST). All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -41,9 +43,13 @@ BEGIN_C_DECLS
  * these keys are RESERVED */
 #define OPAL_PMIX_ATTR_UNDEF      NULL
 
-#define OPAL_PMIX_SERVER_TOOL_SUPPORT            "pmix.srvr.tool"       // (bool) The host RM wants to declare itself as willing to
+#define OPAL_PMIX_SERVER_TOOL_SUPPORT           "pmix.srvr.tool"        // (bool) The host RM wants to declare itself as willing to
                                                                         //        accept tool connection requests
-#define OPAL_PMIX_SERVER_PIDINFO                 "pmix.srvr.pidinfo"    // (uint32_t) pid of the target server
+#define OPAL_PMIX_SERVER_PIDINFO                "pmix.srvr.pidinfo"     // (uint32_t) pid of the target server
+#define OPAL_PMIX_SERVER_TMPDIR                 "pmix.srvr.tmpdir"      // (char*) temp directory where PMIx server will place
+                                                                        //        client rendezvous points
+#define OPAL_PMIX_SYSTEM_TMPDIR                 "pmix.sys.tmpdir"       // (char*) temp directory where PMIx server will place
+                                                                        //        tool rendezvous points
 
 
 /* identification attributes */
@@ -57,7 +63,8 @@ BEGIN_C_DECLS
 #define OPAL_PMIX_CPUSET                        "pmix.cpuset"           // (char*) hwloc bitmap applied to proc upon launch
 #define OPAL_PMIX_CREDENTIAL                    "pmix.cred"             // (char*) security credential assigned to proc
 #define OPAL_PMIX_SPAWNED                       "pmix.spawned"          // (bool) true if this proc resulted from a call to PMIx_Spawn
-#define OPAL_PMIX_ARCH                          "pmix.arch"             // (uint32_t) datatype architecture flag
+#define OPAL_PMIX_ARCH                          "opal.pmix.arch"        // (uint32_t) datatype architecture flag
+                                                                        // not set at job startup, so cannot have the pmix prefix
 
 /* scratch directory locations for use by applications */
 #define OPAL_PMIX_TMPDIR                        "pmix.tmpdir"           // (char*) top-level tmp dir assigned to session
@@ -95,7 +102,8 @@ BEGIN_C_DECLS
 #define OPAL_PMIX_NODEID                        "pmix.nodeid"           // (uint32_t) node identifier
 #define OPAL_PMIX_LOCAL_PEERS                   "pmix.lpeers"           // (char*) comma-delimited string of ranks on this node within the specified nspace
 #define OPAL_PMIX_LOCAL_CPUSETS                 "pmix.lcpus"            // (char*) colon-delimited cpusets of local peers within the specified nspace
-#define OPAL_PMIX_PROC_URI                      "pmix.puri"             // (char*) URI containing contact info for proc
+#define OPAL_PMIX_PROC_URI                      "opal.puri"             // (char*) URI containing contact info for proc - NOTE: this is published by procs and
+                                                                        //            thus cannot be prefixed with "pmix"
 
 /* size info */
 #define OPAL_PMIX_UNIV_SIZE                     "pmix.univ.size"        // (uint32_t) #procs in this nspace
@@ -143,8 +151,9 @@ BEGIN_C_DECLS
 #define OPAL_PMIX_EVENT_ENVIRO_LEVEL            "pmix.evenv"            // (bool) register for environment events only
 #define OPAL_PMIX_EVENT_ORDER_PREPEND           "pmix.evprepend"        // (bool) prepend this handler to the precedence list
 #define OPAL_PMIX_EVENT_CUSTOM_RANGE            "pmix.evrange"          // (pmix_proc_t*) array of pmix_proc_t defining range of event notification
+#define OPAL_PMIX_EVENT_AFFECTED_PROC           "pmix.evproc"           // (pmix_proc_t) single proc that was affected
 #define OPAL_PMIX_EVENT_AFFECTED_PROCS          "pmix.evaffected"       // (pmix_proc_t*) array of pmix_proc_t defining affected procs
-#define OPAL_PMIX_EVENT_NON_DEFAULT             "opal.evnondef"         // (bool) event is not to be delivered to default event handlers
+#define OPAL_PMIX_EVENT_NON_DEFAULT             "pmix.evnondef"         // (bool) event is not to be delivered to default event handlers
 /* fault tolerance-related events */
 #define OPAL_PMIX_EVENT_TERMINATE_SESSION       "pmix.evterm.sess"      // (bool) RM intends to terminate session
 #define OPAL_PMIX_EVENT_TERMINATE_JOB           "pmix.evterm.job"       // (bool) RM intends to terminate this job

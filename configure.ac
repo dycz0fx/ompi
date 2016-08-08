@@ -54,6 +54,8 @@ AC_PREREQ(2.60)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_MACRO_DIR(config)
 
+OPAL_CAPTURE_CONFIGURE_CLI([OPAL_CONFIGURE_CLI])
+
 # Get our platform support file.  This has to be done very, very early
 # because it twiddles random bits of autoconf
 OPAL_LOAD_PLATFORM
@@ -149,6 +151,7 @@ AC_SUBST(libmca_opal_common_sm_so_version)
 AC_SUBST(libmca_opal_common_ugni_so_version)
 AC_SUBST(libmca_opal_common_verbs_so_version)
 AC_SUBST(libmca_orte_common_alps_so_version)
+AC_SUBST(libmca_ompi_common_ompio_so_version)
 
 #
 # Get the versions of the autotools that were used to bootstrap us
