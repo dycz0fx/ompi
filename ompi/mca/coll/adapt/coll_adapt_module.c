@@ -45,6 +45,7 @@
 #include "ompi/group/group.h"
 #include "ompi/mca/coll/coll.h"
 #include "ompi/mca/coll/base/base.h"
+#include "ompi/mca/coll/base/coll_base_functions.h"
 #include "ompi/mca/rte/rte.h"
 #include "ompi/proc/proc.h"
 #include "coll_adapt.h"
@@ -162,13 +163,17 @@ mca_coll_adapt_comm_query(struct ompi_communicator_t *comm, int *priority)
     if (NULL == adapt_module) {
         return NULL;
     }
+    mca_coll_base_comm_t * data = OBJ_NEW(mca_coll_base_comm_t);
+    if (NULL == data) {
+        return OMPI_ERROR;
+    }
 
     /* All is good -- return a module */
     adapt_module->super.coll_module_enable = adapt_module_enable;
     adapt_module->super.ft_event        = NULL;
     adapt_module->super.coll_allgather  = NULL;
     adapt_module->super.coll_allgatherv = NULL;
-    adapt_module->super.coll_allreduce  = mca_coll_adapt_allreduce;
+    adapt_module->super.coll_allreduce  = NULL; //mca_coll_adapt_allreduce;
     adapt_module->super.coll_alltoall   = NULL;
     //adapt_module->super.coll_alltoallv  = mca_coll_adapt_alltoallv;
     adapt_module->super.coll_alltoallw  = NULL;
@@ -187,6 +192,31 @@ mca_coll_adapt_comm_query(struct ompi_communicator_t *comm, int *priority)
     //adapt_module->super.coll_ialltoallv = mca_coll_adapt_ialltoallv;
     //adapt_module->super.coll_iallreduce = mca_coll_adapt_iallreduce;
 
+    /* general n fan out tree */
+    data->cached_ntree = NULL;
+    /* binary tree */
+    data->cached_bintree = NULL;
+    /* binomial tree */
+    data->cached_bmtree = NULL;
+    /* binomial tree */
+    data->cached_in_order_bmtree = NULL;
+    /* chains (fanout followed by pipelines) */
+    data->cached_chain = NULL;
+    /* standard pipeline */
+    data->cached_pipeline = NULL;
+    /* in-order binary tree */
+    data->cached_in_order_bintree = NULL;
+    /* topo linear */
+    data->cached_topolinear = NULL;
+    /* topo chain */
+    data->cached_topochain = NULL;
+    /* two tree binary */
+    data->cached_two_trees_binary = NULL;
+    /* two tree binomial */
+    data->cached_two_trees_binomial = NULL;
+    /* All done */
+    adapt_module->super.base_data = data;
+    
     opal_output_verbose(10, ompi_coll_base_framework.framework_output,
                         "coll:adapt:comm_query (%d/%s): pick me! pick me!",
                         comm->c_contextid, comm->c_name);

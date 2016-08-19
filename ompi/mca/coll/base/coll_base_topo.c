@@ -954,398 +954,115 @@ int ompi_coll_base_topo_dump_tree (ompi_coll_tree_t* tree, int rank)
     return (0);
 }
 
-#define TOPO_LEVEL 5    //topo aware
-void get_topo(int **topo, int size){
-    
-    topo[0][0] = 0;
-    topo[0][1] = 0;
-    topo[0][2] = 0;
-    topo[0][3] = 0;
-    topo[0][4] = 0;
-    
-    topo[1][0] = 0;
-    topo[1][1] = 0;
-    topo[1][2] = 0;
-    topo[1][3] = 0;
-    topo[1][4] = 1;
-    
-    topo[2][0] = 0;
-    topo[2][1] = 0;
-    topo[2][2] = 0;
-    topo[2][3] = 0;
-    topo[2][4] = 2;
-    
-    topo[3][0] = 0;
-    topo[3][1] = 0;
-    topo[3][2] = 0;
-    topo[3][3] = 0;
-    topo[3][4] = 3;
+//TODO: Need to change int to bits
+#define TOPO_LEVEL 3    //topo aware level
+void get_topo(int *topo, struct ompi_communicator_t* comm){
+    int r_rank, i;
+    int size = ompi_comm_size(comm);
+    ompi_proc_t* proc;
+    int * self_topo = (int *)malloc(sizeof(int) * TOPO_LEVEL);
+    int * same_numa = (int *)malloc(sizeof(int) * size);
+    for (i=0; i<size; i++) {
+        same_numa[i] = size;
+    }
+    int same_numa_count = 0;
+    //set daemon vpid
+    self_topo[0] = OMPI_RTE_MY_NODEID;
+    //set numa id
+    for (r_rank=0; r_rank < size; r_rank++) {
+        proc = ompi_group_peer_lookup(comm->c_local_group, r_rank);
+        if (OPAL_PROC_ON_LOCAL_NUMA(proc->super.proc_flags)) {
+            same_numa[same_numa_count] = r_rank;
+            same_numa_count++;
+        }
+    }
+    int min = size;
+    for (i=0; i<same_numa_count; i++) {
+        if (same_numa[i] < min) {
+            min = same_numa[i];
+        }
+    }
+    self_topo[1] = min;
 
-    topo[4][0] = 0;
-    topo[4][1] = 0;
-    topo[4][2] = 0;
-    topo[4][3] = 1;
-    topo[4][4] = 4;
+    //set core id
+    self_topo[2] = ompi_comm_rank(comm);
     
-    topo[5][0] = 0;
-    topo[5][1] = 0;
-    topo[5][2] = 0;
-    topo[5][3] = 1;
-    topo[5][4] = 5;
-    
-    topo[6][0] = 0;
-    topo[6][1] = 0;
-    topo[6][2] = 0;
-    topo[6][3] = 1;
-    topo[6][4] = 6;
-    
-    topo[7][0] = 0;
-    topo[7][1] = 0;
-    topo[7][2] = 0;
-    topo[7][3] = 1;
-    topo[7][4] = 7;
-    
-    topo[8][0] = 0;
-    topo[8][1] = 0;
-    topo[8][2] = 1;
-    topo[8][3] = 2;
-    topo[8][4] = 8;
-    
-    topo[9][0] = 0;
-    topo[9][1] = 0;
-    topo[9][2] = 1;
-    topo[9][3] = 2;
-    topo[9][4] = 9;
-    
-    topo[10][0] = 0;
-    topo[10][1] = 0;
-    topo[10][2] = 1;
-    topo[10][3] = 2;
-    topo[10][4] = 10;
-    
-    topo[11][0] = 0;
-    topo[11][1] = 0;
-    topo[11][2] = 1;
-    topo[11][3] = 2;
-    topo[11][4] = 11;
-    
-    topo[12][0] = 0;
-    topo[12][1] = 0;
-    topo[12][2] = 1;
-    topo[12][3] = 3;
-    topo[12][4] = 12;
-    
-    topo[13][0] = 0;
-    topo[13][1] = 0;
-    topo[13][2] = 1;
-    topo[13][3] = 3;
-    topo[13][4] = 13;
-    
-    topo[14][0] = 0;
-    topo[14][1] = 0;
-    topo[14][2] = 1;
-    topo[14][3] = 3;
-    topo[14][4] = 14;
-    
-    topo[15][0] = 0;
-    topo[15][1] = 0;
-    topo[15][2] = 1;
-    topo[15][3] = 3;
-    topo[15][4] = 15;
+    printf("[topo %d]: %d %d %d\n", ompi_comm_rank(comm), self_topo[0], self_topo[1], self_topo[2]);
 
-    topo[16][0] = 0;
-    topo[16][1] = 0;
-    topo[16][2] = 2;
-    topo[16][3] = 4;
-    topo[16][4] = 16;
+    //do allgather
+    comm->c_coll.coll_allgather(self_topo, TOPO_LEVEL, MPI_INT, topo, TOPO_LEVEL, MPI_INT, comm, comm->c_coll.coll_allgather_module);
+    free(same_numa);
+    free(self_topo);
     
-    topo[17][0] = 0;
-    topo[17][1] = 0;
-    topo[17][2] = 2;
-    topo[17][3] = 4;
-    topo[17][4] = 17;
-    
-    topo[18][0] = 0;
-    topo[18][1] = 0;
-    topo[18][2] = 2;
-    topo[18][3] = 4;
-    topo[18][4] = 18;
-    
-    topo[19][0] = 0;
-    topo[19][1] = 0;
-    topo[19][2] = 2;
-    topo[19][3] = 4;
-    topo[19][4] = 19;
-    
-    topo[20][0] = 0;
-    topo[20][1] = 0;
-    topo[20][2] = 2;
-    topo[20][3] = 5;
-    topo[20][4] = 20;
-    
-    topo[21][0] = 0;
-    topo[21][1] = 0;
-    topo[21][2] = 2;
-    topo[21][3] = 5;
-    topo[21][4] = 21;
-    
-    topo[22][0] = 0;
-    topo[22][1] = 0;
-    topo[22][2] = 2;
-    topo[22][3] = 5;
-    topo[22][4] = 22;
-    
-    topo[23][0] = 0;
-    topo[23][1] = 0;
-    topo[23][2] = 2;
-    topo[23][3] = 5;
-    topo[23][4] = 23;
-    
-    topo[24][0] = 0;
-    topo[24][1] = 0;
-    topo[24][2] = 3;
-    topo[24][3] = 6;
-    topo[24][4] = 24;
-    
-    topo[25][0] = 0;
-    topo[25][1] = 0;
-    topo[25][2] = 3;
-    topo[25][3] = 6;
-    topo[25][4] = 25;
-    
-    topo[26][0] = 0;
-    topo[26][1] = 0;
-    topo[26][2] = 3;
-    topo[26][3] = 6;
-    topo[26][4] = 26;
-    
-    topo[27][0] = 0;
-    topo[27][1] = 0;
-    topo[27][2] = 3;
-    topo[27][3] = 6;
-    topo[27][4] = 27;
-    
-    topo[28][0] = 0;
-    topo[28][1] = 0;
-    topo[28][2] = 3;
-    topo[28][3] = 7;
-    topo[28][4] = 28;
-    
-    topo[29][0] = 0;
-    topo[29][1] = 0;
-    topo[29][2] = 3;
-    topo[29][3] = 7;
-    topo[29][4] = 29;
-    
-    topo[30][0] = 0;
-    topo[30][1] = 0;
-    topo[30][2] = 3;
-    topo[30][3] = 7;
-    topo[30][4] = 30;
-    
-    topo[31][0] = 0;
-    topo[31][1] = 0;
-    topo[31][2] = 3;
-    topo[31][3] = 7;
-    topo[31][4] = 31;
-    
-    /*
-    topo[0][0] = 0;
-    topo[0][1] = 0;
-    topo[0][2] = 0;
-    topo[0][3] = 0;
-    topo[0][4] = 0;
-    
-    topo[1][0] = 0;
-    topo[1][1] = 0;
-    topo[1][2] = 0;
-    topo[1][3] = 0;
-    topo[1][4] = 1;
-    
-    topo[2][0] = 0;
-    topo[2][1] = 0;
-    topo[2][2] = 0;
-    topo[2][3] = 0;
-    topo[2][4] = 2;
-    
-    topo[3][0] = 0;
-    topo[3][1] = 0;
-    topo[3][2] = 0;
-    topo[3][3] = 0;
-    topo[3][4] = 3;
-    
-    topo[4][0] = 0;
-    topo[4][1] = 0;
-    topo[4][2] = 0;
-    topo[4][3] = 0;
-    topo[4][4] = 4;
-    
-    topo[5][0] = 0;
-    topo[5][1] = 0;
-    topo[5][2] = 0;
-    topo[5][3] = 0;
-    topo[5][4] = 5;
-    
-    topo[6][0] = 0;
-    topo[6][1] = 0;
-    topo[6][2] = 0;
-    topo[6][3] = 0;
-    topo[6][4] = 6;
-    
-    topo[7][0] = 0;
-    topo[7][1] = 0;
-    topo[7][2] = 0;
-    topo[7][3] = 0;
-    topo[7][4] = 7;
-    
-    topo[8][0] = 0;
-    topo[8][1] = 0;
-    topo[8][2] = 0;
-    topo[8][3] = 0;
-    topo[8][4] = 8;
-    
-    topo[9][0] = 0;
-    topo[9][1] = 0;
-    topo[9][2] = 0;
-    topo[9][3] = 1;
-    topo[9][4] = 9;
-    
-    topo[10][0] = 0;
-    topo[10][1] = 0;
-    topo[10][2] = 0;
-    topo[10][3] = 1;
-    topo[10][4] = 10;
-    
-    topo[11][0] = 0;
-    topo[11][1] = 0;
-    topo[11][2] = 0;
-    topo[11][3] = 1;
-    topo[11][4] = 11;
-    
-    topo[12][0] = 0;
-    topo[12][1] = 0;
-    topo[12][2] = 0;
-    topo[12][3] = 1;
-    topo[12][4] = 12;
-    
-    topo[13][0] = 0;
-    topo[13][1] = 0;
-    topo[13][2] = 0;
-    topo[13][3] = 1;
-    topo[13][4] = 13;
-    
-    topo[14][0] = 0;
-    topo[14][1] = 0;
-    topo[14][2] = 0;
-    topo[14][3] = 1;
-    topo[14][4] = 14;
-    
-    topo[15][0] = 0;
-    topo[15][1] = 0;
-    topo[15][2] = 0;
-    topo[15][3] = 1;
-    topo[15][4] = 15;
-    
-    topo[16][0] = 0;
-    topo[16][1] = 0;
-    topo[16][2] = 0;
-    topo[16][3] = 2;
-    topo[16][4] = 16;
-    
-    topo[17][0] = 0;
-    topo[17][1] = 0;
-    topo[17][2] = 0;
-    topo[17][3] = 2;
-    topo[17][4] = 17;
-    
-    topo[18][0] = 0;
-    topo[18][1] = 0;
-    topo[18][2] = 0;
-    topo[18][3] = 2;
-    topo[18][4] = 18;
-    
-    topo[19][0] = 0;
-    topo[19][1] = 0;
-    topo[19][2] = 0;
-    topo[19][3] = 2;
-    topo[19][4] = 19;
-    
-    topo[20][0] = 0;
-    topo[20][1] = 0;
-    topo[20][2] = 0;
-    topo[20][3] = 2;
-    topo[20][4] = 20;
-    
-    topo[21][0] = 0;
-    topo[21][1] = 0;
-    topo[21][2] = 0;
-    topo[21][3] = 2;
-    topo[21][4] = 21;
-    
-    topo[22][0] = 0;
-    topo[22][1] = 0;
-    topo[22][2] = 0;
-    topo[22][3] = 2;
-    topo[22][4] = 22;
-    
-    topo[23][0] = 0;
-    topo[23][1] = 0;
-    topo[23][2] = 0;
-    topo[23][3] = 2;
-    topo[23][4] = 23;
-    
-    topo[24][0] = 0;
-    topo[24][1] = 0;
-    topo[24][2] = 0;
-    topo[24][3] = 3;
-    topo[24][4] = 24;
-    
-    topo[25][0] = 0;
-    topo[25][1] = 0;
-    topo[25][2] = 0;
-    topo[25][3] = 3;
-    topo[25][4] = 25;
-    
-    topo[26][0] = 0;
-    topo[26][1] = 0;
-    topo[26][2] = 0;
-    topo[26][3] = 3;
-    topo[26][4] = 26;
-    
-    topo[27][0] = 0;
-    topo[27][1] = 0;
-    topo[27][2] = 0;
-    topo[27][3] = 3;
-    topo[27][4] = 27;
-    
-    topo[28][0] = 0;
-    topo[28][1] = 0;
-    topo[28][2] = 0;
-    topo[28][3] = 3;
-    topo[28][4] = 28;
-    
-    topo[29][0] = 0;
-    topo[29][1] = 0;
-    topo[29][2] = 0;
-    topo[29][3] = 3;
-    topo[29][4] = 29;
-    
-    topo[30][0] = 0;
-    topo[30][1] = 0;
-    topo[30][2] = 0;
-    topo[30][3] = 3;
-    topo[30][4] = 30;
-    
-    topo[31][0] = 0;
-    topo[31][1] = 0;
-    topo[31][2] = 0;
-    topo[31][3] = 3;
-    topo[31][4] = 31;
-    
-*/
+
+//    
+//    topo[0*TOPO_LEVEL+0] = 0;
+//    topo[0*TOPO_LEVEL+1] = 0;
+//    topo[0*TOPO_LEVEL+2] = 0;
+//    
+//    topo[1*TOPO_LEVEL+0] = 1;
+//    topo[1*TOPO_LEVEL+1] = 1;
+//    topo[1*TOPO_LEVEL+2] = 1;
+//    
+//    topo[2*TOPO_LEVEL+0] = 0;
+//    topo[2*TOPO_LEVEL+1] = 2;
+//    topo[2*TOPO_LEVEL+2] = 2;
+//    
+//    topo[3*TOPO_LEVEL+0] = 1;
+//    topo[3*TOPO_LEVEL+1] = 3;
+//    topo[3*TOPO_LEVEL+2] = 3;
+//
+//    topo[4*TOPO_LEVEL+0] = 0;
+//    topo[4*TOPO_LEVEL+1] = 0;
+//    topo[4*TOPO_LEVEL+2] = 4;
+//    
+//    topo[5*TOPO_LEVEL+0] = 1;
+//    topo[5*TOPO_LEVEL+1] = 1;
+//    topo[5*TOPO_LEVEL+2] = 5;
+//    
+//    topo[6*TOPO_LEVEL+0] = 0;
+//    topo[6*TOPO_LEVEL+1] = 2;
+//    topo[6*TOPO_LEVEL+2] = 6;
+//    
+//    topo[7*TOPO_LEVEL+0] = 1;
+//    topo[7*TOPO_LEVEL+1] = 3;
+//    topo[7*TOPO_LEVEL+2] = 7;
+//
+//    topo[8*TOPO_LEVEL+0] = 0;
+//    topo[8*TOPO_LEVEL+1] = 0;
+//    topo[8*TOPO_LEVEL+2] = 8;
+//    
+//    topo[9*TOPO_LEVEL+0] = 1;
+//    topo[9*TOPO_LEVEL+1] = 1;
+//    topo[9*TOPO_LEVEL+2] = 9;
+//    
+//    topo[10*TOPO_LEVEL+0] = 0;
+//    topo[10*TOPO_LEVEL+1] = 2;
+//    topo[10*TOPO_LEVEL+2] = 10;
+//    
+//    topo[11*TOPO_LEVEL+0] = 1;
+//    topo[11*TOPO_LEVEL+1] = 3;
+//    topo[11*TOPO_LEVEL+2] = 11;
+//    
+//    topo[12*TOPO_LEVEL+0] = 0;
+//    topo[12*TOPO_LEVEL+1] = 0;
+//    topo[12*TOPO_LEVEL+2] = 12;
+//    
+//    topo[13*TOPO_LEVEL+0] = 1;
+//    topo[13*TOPO_LEVEL+1] = 1;
+//    topo[13*TOPO_LEVEL+2] = 13;
+//    
+//    topo[14*TOPO_LEVEL+0] = 0;
+//    topo[14*TOPO_LEVEL+1] = 2;
+//    topo[14*TOPO_LEVEL+2] = 14;
+//    
+//    topo[15*TOPO_LEVEL+0] = 1;
+//    topo[15*TOPO_LEVEL+1] = 3;
+//    topo[15*TOPO_LEVEL+2] = 15;
+
 }
 
-
+//convert rank to shift rank, shift rank to viritual rank
 int to_vrank(int rank, int *ranks, int size){
     int i;
     for (i=0; i<size; i++) {
@@ -1356,12 +1073,13 @@ int to_vrank(int rank, int *ranks, int size){
     return -1;
     
 }
+//convert shift rank to rank, viritual rank to shift rank
 int to_rank(int vrank, int *ranks, int size){
     return ranks[vrank];
     
 }
 
-//In ranks array, find actual rank start to end and move them forward
+//In ranks array, find shift rank start to end and move them forward
 void move_group_forward(int *ranks, int size, int start, int end){
     int length = end - start+1;
     int i, start_loc;
@@ -1379,31 +1097,113 @@ void move_group_forward(int *ranks, int size, int start, int end){
     }
 }
 
-//get the starting point of each gourp on every level
-void set_helper(ompi_coll_topo_helper_t *helper, int *ranks, int **topo, int root, int size){
+void sort_topo(int *topo, int start, int end, int size, int *ranks_a, int level){
+    if (level > TOPO_LEVEL-1 || start >= end) {
+        return;
+    }
     int i, j;
+//    printf("Sort [start %d, end %d, level %d]\n", start, end, level);
+//    printf("Before sort: ");
+//    for (i=start; i<=end; i++) {
+//        printf("%d ", topo[i*TOPO_LEVEL+level]);
+//    }
+//    printf("\n");
+    int min = size;
+    int min_loc = -1;
+    for (i=start; i<=end; i++) {
+        //find min
+        for (j=i; j<=end; j++) {
+            if (topo[j*TOPO_LEVEL+level] < min) {
+                min = topo[j*TOPO_LEVEL+level];
+                min_loc = j;
+                //printf("i %d j %d min %d, min_loc %d\n", i, j, min, min_loc);
+                
+            }
+        }
+        //swap i and min_loc
+        //printf("min %d, min_loc %d\n", min, min_loc);
+        int temp;
+        for (j=0; j<TOPO_LEVEL; j++) {
+            temp = topo[i*TOPO_LEVEL+j];
+            topo[i*TOPO_LEVEL+j] = topo[min_loc*TOPO_LEVEL+j];
+            topo[min_loc*TOPO_LEVEL+j] = temp;
+        }
+        temp = ranks_a[i];
+        ranks_a[i] = ranks_a[min_loc];
+        ranks_a[min_loc] = temp;
+        min = size;
+        min_loc = -1;
+    }
+//    printf("After sort: ");
+//    for (i=start; i<=end; i++) {
+//        printf("%d ", topo[i*TOPO_LEVEL+level]);
+//    }
+//    printf("\n");
+    int last;
+    int new_start;
+    int new_end;
+    for (i=start; i<=end; i++) {
+        if (i == start) {
+            last = topo[i*TOPO_LEVEL+level];
+            new_start = start;
+        }
+        else if (i == end) {
+            new_end = end;
+            sort_topo(topo, new_start, new_end, size, ranks_a, level+1);
+        }
+        else if (last != topo[i*TOPO_LEVEL+level]) {
+            new_end = i-1;
+            sort_topo(topo, new_start, new_end, size, ranks_a, level+1);
+            new_start = i;
+            last = topo[i*TOPO_LEVEL+level];
+        }
+    }
+}
+
+//get the starting point of each gourp on every level
+void set_helper(ompi_coll_topo_helper_t *helper, int *ranks_a, int *ranks_s, int *topo, int root, int size){
+    int i, j;
+    //sort the topo such that each group is contiguous
+    sort_topo(topo, 0, size-1, size, ranks_a, 0);
+//
+//        for (i=0; i<size; i++) {
+//            printf("[%d]: ", i);
+//            int j;
+//            for (j=0; j<TOPO_LEVEL; j++) {
+//                printf("%d ", topo[i*TOPO_LEVEL+j]);
+//            }
+//            printf("\n");
+//        }
+//    printf("ranks_a: ");
+//    for (i=0; i<size; i++) {
+//        printf("%d ", ranks_a[i]);
+//    }
+//    printf("\n");
+
     int count = 0;
-    int *temp = (int *) malloc(sizeof(int)*size);
+    int *temp = (int *)malloc(sizeof(int)*size);
     for (i=0; i<TOPO_LEVEL; i++) {
         count = 0;
         int this_group = -1;
-        for (j=0; j<size; j++) {    //j is actual rank
-            if (this_group != topo[j][i]) {
-                //printf("this_group %d, count %d\n", this_group, count);
-                this_group = topo[j][i];
+        for (j=0; j<size; j++) {    //j is shifted rank
+            if (this_group != topo[j*TOPO_LEVEL+i]) {
+                //printf("this_group %d, count %d, j %d\n", this_group, count, j);
+                this_group = topo[j*TOPO_LEVEL+i];
                 temp[count] = j;
                 count++;
             }
         }
         helper[i].num_group = count;
-        helper[i].start_loc = (int *)malloc(sizeof(int)*count);
+        if (count != 0) {
+            helper[i].start_loc = (int *)malloc(sizeof(int)*count);
+        }
         for (j=0; j<count; j++) {
             helper[i].start_loc[j] = temp[j];
         }
         //if there are more than one group in this level
         if (count > 1) {
             for (j=0; j<count; j++) {
-                if (root >= temp[j]) {
+                if (to_vrank(root, ranks_a, size) >= temp[j]) {
                     int end;
                     if (j == count-1) {
                         end = size-1;
@@ -1412,23 +1212,30 @@ void set_helper(ompi_coll_topo_helper_t *helper, int *ranks, int **topo, int roo
                         end = temp[j+1]-1;
                     }
                     //find the group with root in this level
-                    if (root <= end) {
+                    if (to_vrank(root, ranks_a, size) <= end) {
                         //move that group forward
                         //printf("Move group forward: start %d, end %d\n", temp[j], end);
-                        move_group_forward(ranks, size, temp[j], end);
+                        move_group_forward(ranks_s, size, temp[j], end);
                     }
                 }
             }
         }
     }
     
+//    print_helper(helper);
+//    printf("ranks_s: ");
+//    for (i=0; i<size; i++) {
+//        printf("%d ", ranks_s[i]);
+//    }
+//    printf("\n");
+
     //set helper with vranks
     for (i=0; i<TOPO_LEVEL; i++) {
         count = 0;
         int this_group = -1;
         for (j=0; j<size; j++) {    //j is virtal rank
-            if (this_group != topo[to_rank(j, ranks, size)][i]) {
-                this_group = topo[to_rank(j, ranks, size)][i];
+            if (this_group != topo[to_rank(j, ranks_s, size)*TOPO_LEVEL+i]) {
+                this_group = topo[to_rank(j, ranks_s, size)*TOPO_LEVEL+i];
                 temp[count] = j;
                 count++;
             }
@@ -1445,8 +1252,11 @@ void set_helper(ompi_coll_topo_helper_t *helper, int *ranks, int **topo, int roo
 void free_helper(ompi_coll_topo_helper_t *helper){
     int i;
     for (i=0; i<TOPO_LEVEL; i++) {
-        free(helper[i].start_loc);
+        if (helper[i].num_group != 0) {
+            free(helper[i].start_loc);
+        }
     }
+    free(helper);
 }
 
 void print_helper(ompi_coll_topo_helper_t *helper){
@@ -1461,96 +1271,10 @@ void print_helper(ompi_coll_topo_helper_t *helper){
     }
 }
 
-void probe_topo(struct ompi_communicator_t* comm){
-    int message_count = 163740;
-    int *buff = (int *) malloc(message_count*sizeof(int));
-    int size, rank;
-    size = ompi_comm_size(comm);
-    rank = ompi_comm_rank(comm);
-    int i, j, k;
-    double start, end;
-    ompi_request_t *request;
-    double *time = (double *) malloc(size*sizeof(double));
-    for (i=0; i<size; i++) {
-        time[i] = 0.0;
-    }
-    for (k=0; k<10; k++) {
-        comm->c_coll.coll_barrier(comm, comm->c_coll.coll_barrier_module);
-        for (i=0; i<size; i++) {
-            for (j=0; j<size; j++) {
-                comm->c_coll.coll_barrier(comm, comm->c_coll.coll_barrier_module);
-                if (i != j) {
-                    if (rank == i) {
-                        MCA_PML_CALL(isend(buff, message_count, MPI_INT, j, i*j+j, MCA_PML_BASE_SEND_SYNCHRONOUS, comm, &request));
-                        start = MPI_Wtime();
-                        ompi_request_wait ( &request, MPI_STATUS_IGNORE );
-                        end = MPI_Wtime();
-                        time[j] += end-start;
-                        
-                    }
-                    else if (rank == j) {
-                        MCA_PML_CALL(irecv(buff, message_count, MPI_INT, i, i*j+j, comm, &request));
-                        ompi_request_wait (&request, MPI_STATUS_IGNORE);
-                    }
-                }
-            }
-        }
-    }
-    
-    for (i=0; i<size; i++) {
-        time[i] = time[i]/10;
-    }
-    
-    
-    double *alltime = (double *) malloc(size*size*sizeof(double));
-    comm->c_coll.coll_gather(time, size, MPI_DOUBLE, alltime, size, MPI_DOUBLE, 0, comm, comm->c_coll.coll_gather_module);
-    printf("[%d]: ", rank);
-    for (i=0; i<size; i++) {
-        printf("%lf ", time[i]);
-    }
-    printf("\n");
-    
-    printf("print alltime\n");
-    if (rank == 0) {
-        for (i=0; i<size; i++) {
-            printf("[%d]: ", i);
-            for (j=0; j<size; j++) {
-                printf("%lf ", alltime[i*size+j]);
-            }
-            printf("\n");
-        }
-    }
-    
-    //clean alltime matrix
-    for (i=0; i<size; i++) {
-        for (j=i; j<size; j++) {
-            if (alltime[i*size+j] <= alltime[j*size+i]) {
-                alltime[j*size+i] = alltime[i*size+j];
-            }
-            else{
-                alltime[i*size+j] = alltime[j*size+i];
-            }
-        }
-    }
-    
-    printf("print changed alltime\n");
-    if (rank == 0) {
-        for (i=0; i<size; i++) {
-            printf("[%d]: ", i);
-            for (j=0; j<size; j++) {
-                printf("%lf ", alltime[i*size+j]);
-            }
-            printf("\n");
-        }
-    }
-    free(alltime);
-    free(time);
-}
 
 ompi_coll_tree_t*
-ompi_coll_base_topo_build_topoaware_linear(struct ompi_communicator_t* comm, int root ){
+ompi_coll_base_topo_build_topoaware_linear(struct ompi_communicator_t* comm, int root, mca_coll_base_module_t *module ){
     
-    //probe_topo(comm);
     int i, j;
     ompi_coll_tree_t *tree = (ompi_coll_tree_t*)malloc(sizeof(ompi_coll_tree_t));
     if (!tree) {
@@ -1575,27 +1299,40 @@ ompi_coll_base_topo_build_topoaware_linear(struct ompi_communicator_t* comm, int
     size = ompi_comm_size(comm);
     rank = ompi_comm_rank(comm);
     
-    int **topo = (int **)malloc(sizeof(int *)*size);
-    for (i=0; i<size; i++) {
-        topo[i] = (int *)malloc(sizeof(int)*TOPO_LEVEL);
+    int *topo;
+    mca_coll_base_comm_t *coll_comm = module->base_data;
+    if( !( (coll_comm->cached_topo) && (coll_comm->cached_old_comm == comm) ) ) {
+        if( coll_comm->cached_topo ) {
+            free(coll_comm->cached_topo);
+        }
+        topo = (int *)malloc(sizeof(int)*size*TOPO_LEVEL);
+        get_topo(topo, comm);
+        coll_comm->cached_topo = topo;
+        coll_comm->cached_old_comm = comm;
     }
-    get_topo(topo, size);
+    else{
+        topo = coll_comm->cached_topo;
+    }
     
-    int *ranks = (int *)malloc(sizeof(int)*size);   //ranks[0] store which actual rank has vrank 0
+    int *ranks_a = (int *)malloc(sizeof(int)*size);   //ranks[0] store which actual rank has shift rank 0
+    int *ranks_s = (int *)malloc(sizeof(int)*size);   //ranks[0] store which shift rank has virtual rank 0
+
     for (i=0; i<size; i++) {
-        ranks[i] = i;
+        ranks_a[i] = i;
+        ranks_s[i] = i;
     }
     ompi_coll_topo_helper_t *helper = (ompi_coll_topo_helper_t *) malloc(sizeof(ompi_coll_topo_helper_t)*TOPO_LEVEL);
-    set_helper(helper, ranks, topo, root, size);
+    set_helper(helper, ranks_a, ranks_s, topo, root, size);
     //print_helper(helper);
     
-    int vrank = to_vrank(rank, ranks, size);
+    int vrank = to_vrank(to_vrank(rank, ranks_a, size), ranks_s, size);
     
     int head = 0;
     int tail = size-1;
     int new_head = -1;
     int new_tail = -1;
     int rank_loc = -1;
+    
     for (i=0; i<TOPO_LEVEL; i++) {
         //count how many groups on this level between head and tail
         int count = 0;
@@ -1641,24 +1378,21 @@ ompi_coll_base_topo_build_topoaware_linear(struct ompi_communicator_t* comm, int
         //printf("exist %d, count = %d\n", exist, count);
         //if rank is one of the group heads
         if (exist) {
-            build_topoaware_linear(count, temp_start_loc, rank, rank_loc, size, tree, ranks);
+            build_topoaware_linear(count, temp_start_loc, rank, rank_loc, size, tree, ranks_a, ranks_s);
         }
         
         free(temp_start_loc);
     }
     
     free_helper(helper);
-    free(ranks);
-    for (i=0; i<size; i++) {
-        free(topo[i]);
-    }
-    free(topo);
+    free(ranks_a);
+    free(ranks_s);
     
     return tree;
 }
 
 ompi_coll_tree_t*
-ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int root ){
+ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int root, mca_coll_base_module_t *module ){
     int i, j;
     ompi_coll_tree_t *tree = (ompi_coll_tree_t*)malloc(sizeof(ompi_coll_tree_t));
     if (!tree) {
@@ -1683,27 +1417,40 @@ ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int 
     size = ompi_comm_size(comm);
     rank = ompi_comm_rank(comm);
     
-    int **topo = (int **)malloc(sizeof(int *)*size);
-    for (i=0; i<size; i++) {
-        topo[i] = (int *)malloc(sizeof(int)*TOPO_LEVEL);
+    int *topo;
+    mca_coll_base_comm_t *coll_comm = module->base_data;
+    if( !( (coll_comm->cached_topo) && (coll_comm->cached_old_comm == comm) ) ) {
+        if( coll_comm->cached_topo ) {
+            free(coll_comm->cached_topo);
+        }
+        topo = (int *)malloc(sizeof(int)*size*TOPO_LEVEL);
+        get_topo(topo, comm);
+        coll_comm->cached_topo = topo;
+        coll_comm->cached_old_comm = comm;
     }
-    get_topo(topo, size);
+    else{
+        topo = coll_comm->cached_topo;
+    }
     
-    int *ranks = (int *)malloc(sizeof(int)*size);   //ranks[0] store which actual rank has vrank 0
+    int *ranks_a = (int *)malloc(sizeof(int)*size);   //ranks[0] store which actual rank has shift rank 0
+    int *ranks_s = (int *)malloc(sizeof(int)*size);   //ranks[0] store which shift rank has virtual rank 0
+    
     for (i=0; i<size; i++) {
-        ranks[i] = i;
+        ranks_a[i] = i;
+        ranks_s[i] = i;
     }
     ompi_coll_topo_helper_t *helper = (ompi_coll_topo_helper_t *) malloc(sizeof(ompi_coll_topo_helper_t)*TOPO_LEVEL);
-    set_helper(helper, ranks, topo, root, size);
+    set_helper(helper, ranks_a, ranks_s, topo, root, size);
     //print_helper(helper);
     
-    int vrank = to_vrank(rank, ranks, size);
+    int vrank = to_vrank(to_vrank(rank, ranks_a, size), ranks_s, size);
     
     int head = 0;
     int tail = size-1;
     int new_head = -1;
     int new_tail = -1;
     int rank_loc = -1;
+    
     for (i=0; i<TOPO_LEVEL; i++) {
         //count how many groups on this level between head and tail
         int count = 0;
@@ -1711,6 +1458,9 @@ ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int 
         int end = 0;
         int *temp_start_loc = (int *)malloc(sizeof(int)*helper[i].num_group);
         //printf("head = %d, tail = %d, num_group %d\n", head, tail, helper[i].num_group);
+        if (helper[i].num_group <= 0) {
+            continue;
+        }
         for (j=0; j<helper[i].num_group; j++) {
             if (helper[i].start_loc[j] >= head) {
                 if (helper[i].start_loc[j] <= tail) {
@@ -1749,48 +1499,47 @@ ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int 
         //printf("exist %d, count = %d\n", exist, count);
         //if rank is one of the group heads
         if (exist) {
-            build_topoaware_chain(count, temp_start_loc, rank, rank_loc, size, tree, ranks);
+            build_topoaware_chain(count, temp_start_loc, rank, rank_loc, size, tree, ranks_a, ranks_s);
         }
-
+        
         free(temp_start_loc);
     }
-
+    
     free_helper(helper);
-    free(ranks);
-    for (i=0; i<size; i++) {
-        free(topo[i]);
-    }
-    free(topo);
-
+    free(ranks_a);
+    free(ranks_s);
+    
     return tree;
 }
 
-void build_topoaware_chain(int count, int *start_loc, int rank, int rank_loc, int size, ompi_coll_tree_t *tree, int *ranks){
+
+
+void build_topoaware_chain(int count, int *start_loc, int rank, int rank_loc, int size, ompi_coll_tree_t *tree, int *ranks_a, int *ranks_s){
     //printf("build_topo_chain, count = %d, rank = %d, rank_loc=%d\n", count, rank, rank_loc);
     if (count == 1) {
         return;
     }
     else {
         if (rank_loc == 0) {
-            tree->tree_next[tree->tree_nextsize] = to_rank(start_loc[rank_loc+1], ranks, size);
+            tree->tree_next[tree->tree_nextsize] = to_rank(to_rank(start_loc[rank_loc+1], ranks_s, size), ranks_a, size);
             tree->tree_nextsize+=1;
             //printf("[rank %d]: set next %d\n", rank, tree->tree_next[tree->tree_nextsize-1]);
         }
         else if (rank_loc == count - 1) {
-            tree->tree_prev = to_rank(start_loc[rank_loc-1], ranks, size);
+            tree->tree_prev = to_rank(to_rank(start_loc[rank_loc-1], ranks_s, size), ranks_a, size);
             //printf("[rank %d]: set prev %d\n", rank, tree->tree_prev);
         }
         else {
-            tree->tree_next[tree->tree_nextsize] = to_rank(start_loc[rank_loc+1], ranks, size);
+            tree->tree_next[tree->tree_nextsize] = to_rank(to_rank(start_loc[rank_loc+1], ranks_s, size), ranks_a, size);
             tree->tree_nextsize+=1;
             //printf("[rank %d]: set next %d\n", rank, tree->tree_next[tree->tree_nextsize-1]);
-            tree->tree_prev = to_rank(start_loc[rank_loc-1], ranks, size);
+            tree->tree_prev = to_rank(to_rank(start_loc[rank_loc-1], ranks_s, size), ranks_a, size);
             //printf("[rank %d]: set prev %d\n", rank, tree->tree_prev);
         }
     }
 }
 
-void build_topoaware_linear(int count, int *start_loc, int rank, int rank_loc, int size, ompi_coll_tree_t *tree, int *ranks){
+void build_topoaware_linear(int count, int *start_loc, int rank, int rank_loc, int size, ompi_coll_tree_t *tree, int *ranks_a, int *ranks_s){
     //printf("build_topo_linear, count = %d, rank = %d, rank_loc=%d\n", count, rank, rank_loc);
     if (count == 1) {
         return;
@@ -1799,14 +1548,14 @@ void build_topoaware_linear(int count, int *start_loc, int rank, int rank_loc, i
         if (rank_loc == 0) {
             int i;
             for (i=1; i<count; i++) {
-                tree->tree_next[tree->tree_nextsize] = to_rank(start_loc[i], ranks, size);
+                tree->tree_next[tree->tree_nextsize] = to_rank(to_rank(start_loc[i], ranks_s, size), ranks_a, size);
                 tree->tree_nextsize+=1;
                 //printf("[rank %d]: set next %d\n", rank, tree->tree_next[tree->tree_nextsize-1]);
             }
             
         }
         else {
-            tree->tree_prev = to_rank(start_loc[0], ranks, size);
+            tree->tree_prev = to_rank(to_rank(start_loc[0], ranks_s, size), ranks_a, size);
             //printf("[rank %d]: set prev %d\n", rank, tree->tree_prev);
         }
     }

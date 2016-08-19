@@ -315,14 +315,14 @@ int mca_coll_adapt_reduce_linear(const void *sbuf, void *rbuf, int count, struct
 }
 
 int mca_coll_adapt_reduce_topoaware_linear(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    ompi_coll_tree_t * tree = ompi_coll_base_topo_build_topoaware_linear(comm, root);
+    ompi_coll_tree_t * tree = ompi_coll_base_topo_build_topoaware_linear(comm, root, module);
     int r =  mca_coll_adapt_reduce_generic(sbuf, rbuf, count, dtype, op, root, comm, module, tree);
     ompi_coll_base_topo_destroy_tree(&tree);
     return r;
 }
 
 int mca_coll_adapt_reduce_topoaware_chain(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    ompi_coll_tree_t * tree = ompi_coll_base_topo_build_topoaware_chain(comm, root);
+    ompi_coll_tree_t * tree = ompi_coll_base_topo_build_topoaware_chain(comm, root, module);
     int r =  mca_coll_adapt_reduce_generic(sbuf, rbuf, count, dtype, op, root, comm, module, tree);
     ompi_coll_base_topo_destroy_tree(&tree);
     return r;
