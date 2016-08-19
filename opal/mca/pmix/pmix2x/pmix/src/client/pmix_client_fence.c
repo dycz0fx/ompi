@@ -18,7 +18,7 @@
 #include <src/include/pmix_config.h>
 
 #include <src/include/types.h>
-#include <pmix/autogen/pmix_stdint.h>
+#include <src/include/pmix_stdint.h>
 
 #include <pmix.h>
 
@@ -51,7 +51,6 @@
 #include "src/util/error.h"
 #include "src/util/hash.h"
 #include "src/util/output.h"
-#include "src/util/progress_threads.h"
 #include "src/usock/usock.h"
 #include "src/sec/pmix_sec.h"
 
@@ -59,8 +58,8 @@
 
 static pmix_status_t unpack_return(pmix_buffer_t *data);
 static pmix_status_t pack_fence(pmix_buffer_t *msg, pmix_cmd_t cmd,
-                      const pmix_proc_t *procs, size_t nprocs,
-                      const pmix_info_t *info, size_t ninfo);
+                                const pmix_proc_t *procs, size_t nprocs,
+                                const pmix_info_t *info, size_t ninfo);
 static void wait_cbfunc(struct pmix_peer_t *pr,
                         pmix_usock_hdr_t *hdr,
                         pmix_buffer_t *buf, void *cbdata);
@@ -177,7 +176,7 @@ static pmix_status_t unpack_return(pmix_buffer_t *data)
 
     /* unpack the status code */
     cnt = 1;
-    if (PMIX_SUCCESS != (rc = pmix_bfrop.unpack(data, &ret, &cnt, PMIX_INT))) {
+    if (PMIX_SUCCESS != (rc = pmix_bfrop.unpack(data, &ret, &cnt, PMIX_STATUS))) {
         PMIX_ERROR_LOG(rc);
         return rc;
     }

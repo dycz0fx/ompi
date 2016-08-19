@@ -35,7 +35,7 @@
 #include <src/include/pmix_config.h>
 
 #include <src/include/types.h>
-#include <pmix/pmix_common.h>
+#include <pmix_common.h>
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -104,7 +104,7 @@ typedef struct {
     size_t errhandler_ref;
     void *cbdata;
     char nspace[PMIX_MAX_NSLEN+1];
-    int rank;
+    pmix_rank_t rank;
     char *key;
     pmix_value_t *value;
     pmix_proc_t *procs;

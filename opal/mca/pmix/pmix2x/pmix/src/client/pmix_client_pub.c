@@ -18,7 +18,7 @@
 #include <src/include/pmix_config.h>
 
 #include <src/include/types.h>
-#include <pmix/autogen/pmix_stdint.h>
+#include <src/include/pmix_stdint.h>
 
 #include <pmix.h>
 
@@ -50,7 +50,6 @@
 #include "src/util/argv.h"
 #include "src/util/error.h"
 #include "src/util/output.h"
-#include "src/util/progress_threads.h"
 #include "src/usock/usock.h"
 #include "src/sec/pmix_sec.h"
 
@@ -412,7 +411,7 @@ static void wait_cbfunc(struct pmix_peer_t *pr, pmix_usock_hdr_t *hdr,
 
     /* unpack the returned status */
     cnt = 1;
-    if (PMIX_SUCCESS != (rc = pmix_bfrop.unpack(buf, &ret, &cnt, PMIX_INT))) {
+    if (PMIX_SUCCESS != (rc = pmix_bfrop.unpack(buf, &ret, &cnt, PMIX_STATUS))) {
         PMIX_ERROR_LOG(rc);
     }
     if (NULL != cb->op_cbfunc) {
@@ -454,7 +453,7 @@ static void wait_lookup_cbfunc(struct pmix_peer_t *pr, pmix_usock_hdr_t *hdr,
 
     /* unpack the returned status */
     cnt = 1;
-    if (PMIX_SUCCESS != (rc = pmix_bfrop.unpack(buf, &ret, &cnt, PMIX_INT))) {
+    if (PMIX_SUCCESS != (rc = pmix_bfrop.unpack(buf, &ret, &cnt, PMIX_STATUS))) {
         PMIX_ERROR_LOG(rc);
         ret = rc;
     }

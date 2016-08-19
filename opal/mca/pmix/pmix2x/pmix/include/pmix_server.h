@@ -59,15 +59,12 @@
 #ifndef PMIx_SERVER_API_H
 #define PMIx_SERVER_API_H
 
-#include <pmix/autogen/config.h>
-
-/* Symbol transforms */
-#include <pmix/rename.h>
-
 /* Structure and constant definitions */
-#include <pmix/pmix_common.h>
+#include <pmix_common.h>
 
-BEGIN_C_DECLS
+#if defined(c_plusplus) || defined(__cplusplus)
+extern "C" {
+#endif
 
 /****    SERVER FUNCTION-SHIPPED APIs    ****/
 /* NOTE: for performance purposes, the host server is required to
@@ -80,7 +77,6 @@ BEGIN_C_DECLS
  * PMIX server support library and MUST NOT be free'd. Data returned
  * by the host server via callback function is owned by the host
  * server, which is free to release it upon return from the callback */
-
 
 /* Notify the host server that a client connected to us - note
  * that the client will be in a blocked state until the host server
@@ -289,11 +285,10 @@ typedef pmix_status_t (*pmix_server_listener_fn_t)(int listening_sd,
 
 /* Query information from the resource manager. The query will include
  * the nspace/rank of the proc that is requesting the info, an
- * array of pmix_info_t describing the request, an optional array
- * of pmix_info_t directives, and a callback function/data for the return. */
+ * array of pmix_query_t describing the request, and a callback
+ * function/data for the return. */
 typedef pmix_status_t (*pmix_server_query_fn_t)(pmix_proc_t *proct,
-                                                pmix_info_t *info, size_t ninfo,
-                                                pmix_info_t *directives, size_t ndirs,
+                                                pmix_query_t *queries, size_t nqueries,
                                                 pmix_info_cbfunc_t cbfunc,
                                                 void *cbdata);
 
@@ -321,6 +316,12 @@ typedef void (*pmix_server_tool_connection_fn_t)(pmix_info_t *info, size_t ninfo
                                                  pmix_tool_connection_cbfunc_t cbfunc,
                                                  void *cbdata);
 
+/* Log data on behalf of a client */
+typedef void (*pmix_server_log_fn_t)(const pmix_proc_t *client,
+                                     const pmix_info_t data[], size_t ndata,
+                                     const pmix_info_t directives[], size_t ndirs,
+                                     pmix_op_cbfunc_t cbfunc, void *cbdata);
+
 typedef struct pmix_server_module_2_0_0_t {
     pmix_server_client_connected_fn_t   client_connected;
     pmix_server_client_finalized_fn_t   client_finalized;
@@ -339,6 +340,7 @@ typedef struct pmix_server_module_2_0_0_t {
     pmix_server_listener_fn_t           listener;
     pmix_server_query_fn_t              query;
     pmix_server_tool_connection_fn_t    tool_connected;
+    pmix_server_log_fn_t                log;
 } pmix_server_module_t;
 
 /****    SERVER SUPPORT INIT/FINALIZE FUNCTIONS    ****/
@@ -481,6 +483,8 @@ pmix_status_t PMIx_server_dmodex_request(const pmix_proc_t *proc,
                                          pmix_dmodex_response_fn_t cbfunc,
                                          void *cbdata);
 
-END_C_DECLS
+#if defined(c_plusplus) || defined(__cplusplus)
+}
+#endif
 
 #endif

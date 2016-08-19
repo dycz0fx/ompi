@@ -24,7 +24,7 @@ outputroot=$HOME/openmpi/nightly
 script_uri=contrib/nightly/create_tarball.sh
 
 # helper scripts dir
-script_dir=$HOME/scripts
+script_dir=$HOME/ompi/contrib/build-server
 
 # The tarballs to make
 if [ $# -eq 0 ] ; then
@@ -39,7 +39,7 @@ build_root=$HOME/openmpi/nightly-tarball-build-root
 
 # Coverity stuff
 coverity_token=`cat $HOME/coverity/openmpi-token.txt`
-coverity_configure_args="--enable-debug --enable-mpi-fortran --enable-mpi-java --enable-oshmem --enable-oshmem-fortran --enable-oshmem-java --with-mxm=/opt/mellanox/mxm --with-psm --with-usnic --with-libfabric=/u/mpiteam/libfabric-current/install"
+coverity_configure_args="--enable-debug --enable-mpi-fortran --enable-mpi-java --enable-oshmem --enable-oshmem-fortran --with-psm --with-usnic --with-libfabric"
 
 export PATH=$HOME_PREFIX/bin:$PATH
 export LD_LIBRARY_PATH=$HOME_PREFIX/lib:$LD_LIBRARY_PATH
@@ -144,7 +144,7 @@ done
 
 for tarball in `cat $pending_coverity`; do
     echo "=== Submitting $tarball to Coverity..."
-    $HOME/scripts/openmpi-nightly-coverity.pl \
+    ${script_dir}/openmpi-nightly-coverity.pl \
         --filename=$tarball \
         --coverity-token=$coverity_token \
         --verbose \
