@@ -71,8 +71,7 @@ static int send_cb(ompi_request_t *req)
         opal_free_list_t * temp = context->con->context_list;
         OBJ_RELEASE(context->con);
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
-        OPAL_THREAD_LOCK(&
-        );
+        OPAL_THREAD_LOCK(&ompi_request_lock);
         ompi_request_complete(temp_req, 1);
         OPAL_THREAD_UNLOCK(&ompi_request_lock);
         TEST("[%d]: Singal in send\n", ompi_comm_rank(context->con->comm));
