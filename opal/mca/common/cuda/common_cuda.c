@@ -121,7 +121,7 @@ bool mca_common_cuda_enabled = false;
 static bool mca_common_cuda_register_memory = true;
 static bool mca_common_cuda_warning = false;
 static opal_list_t common_cuda_memory_registrations;
-static CUstream ipcStream = NULL;
+static CUstream *ipcStreams = NULL;
 static CUstream dtohStream = NULL;
 static CUstream htodStream = NULL;
 static CUstream memcpyStream = NULL;
@@ -157,6 +157,7 @@ OBJ_CLASS_INSTANCE(common_cuda_mem_regs_t,
 
 static int mca_common_cuda_async = 1;
 static int mca_common_cuda_cumemcpy_async;
+static int mca_common_cuda_d2d_nstreams;
 #if OPAL_ENABLE_DEBUG
 static int mca_common_cuda_cumemcpy_timing;
 #endif /* OPAL_ENABLE_DEBUG */
@@ -284,6 +285,15 @@ void mca_common_cuda_register_mca_variables(void)
                                  OPAL_INFO_LVL_5,
                                  MCA_BASE_VAR_SCOPE_READONLY,
                                  &mca_common_cuda_cumemcpy_async);
+
+    /* Use this parameter to set the number of CUDA streams for IPC async memcpy */
+    mca_common_cuda_d2d_nstreams = 1;
+    (void) mca_base_var_register("ompi", "mpi", "common_cuda", "d2d_nstreams",
+                                 "Set number of CUDA async streams for device to device cuMemcpyAsync",
+                                 MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                 OPAL_INFO_LVL_5,
+                                 MCA_BASE_VAR_SCOPE_READONLY,
+                                 &mca_common_cuda_d2d_nstreams);
 
 #if OPAL_ENABLE_DEBUG
     /* Use this flag to dump out timing of cumempcy sync and async */
@@ -497,6 +507,10 @@ static int mca_common_cuda_stage_two_init(opal_common_cuda_function_table_t *fta
     ftable->gpu_cu_memcpy_async = &mca_common_cuda_cu_memcpy_async;
     ftable->gpu_cu_memcpy = &mca_common_cuda_cu_memcpy;
     ftable->gpu_memmove = &mca_common_cuda_memmove;
+
+    if (OPAL_SUCCESS != opal_cuda_kernel_support_init()) {
+        opal_cuda_kernel_support_fini();    
+    }
 
     opal_output_verbose(30, mca_common_cuda_output,
                         "CUDA: support functions initialized");
@@ -722,12 +736,17 @@ static int mca_common_cuda_stage_three_init(void)
     }
 
     /* Create stream for use in ipc asynchronous copies */
-    res = cuFunc.cuStreamCreate(&ipcStream, 0);
-    if (OPAL_UNLIKELY(res != CUDA_SUCCESS)) {
-        opal_show_help("help-mpi-common-cuda.txt", "cuStreamCreate failed",
-                       true, OPAL_PROC_MY_HOSTNAME, res);
-        rc = OPAL_ERROR;
-        goto cleanup_and_error;
+    ipcStreams = (CUstream*)malloc(sizeof(CUstream)*mca_common_cuda_d2d_nstreams);
+    for (int s=0; s<mca_common_cuda_d2d_nstreams; s++) {
+        ipcStreams[s] = NULL;
+        /* Create stream for use in ipc asynchronous copies */
+        res = cuFunc.cuStreamCreate(ipcStreams+s, 0);
+        if (OPAL_UNLIKELY(res != CUDA_SUCCESS)) {
+            opal_show_help("help-mpi-common-cuda.txt", "cuStreamCreate failed",
+                    true, OPAL_PROC_MY_HOSTNAME, res);
+            rc = OPAL_ERROR;
+            goto cleanup_and_error;
+        }
     }
 
     /* Create stream for use in dtoh asynchronous copies */
@@ -878,8 +897,12 @@ void mca_common_cuda_fini(void)
         if (NULL != cuda_event_dtoh_frag_array) {
             free(cuda_event_dtoh_frag_array);
         }
-        if ((NULL != ipcStream) && ctx_ok) {
-            cuFunc.cuStreamDestroy(ipcStream);
+        if (ipcStreams) {
+            for (int s=0; s<mca_common_cuda_d2d_nstreams; s++) {
+               if ((NULL != ipcStreams[s]) && ctx_ok) {
+                   cuFunc.cuStreamDestroy(ipcStreams[s]);
+               }
+            }
         }
         if ((NULL != dtohStream) && ctx_ok) {
             cuFunc.cuStreamDestroy(dtohStream);
@@ -1268,6 +1291,7 @@ int mca_common_cuda_memcpy(void *dst, void *src, size_t amount, char *msg,
 {
     CUresult result;
     int iter;
+    CUstream ipcStream = ipcStreams[cuda_event_ipc_first_avail%mca_common_cuda_d2d_nstreams];
 
     OPAL_THREAD_LOCK(&common_cuda_ipc_lock);
     /* First make sure there is room to store the event.  If not, then
@@ -1846,6 +1870,10 @@ static int mca_common_cuda_is_gpu_buffer(const void *pUserBuf, opal_convertor_t 
     if (!stage_three_init_complete) {
         if (0 != mca_common_cuda_stage_three_init()) {
             opal_cuda_support = 0;
+        } else {
+            if (OPAL_SUCCESS != opal_cuda_kernel_support_init()) {
+                opal_cuda_kernel_support_fini();    
+            }
         }
     }
 
