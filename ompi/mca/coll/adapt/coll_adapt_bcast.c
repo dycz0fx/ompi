@@ -81,7 +81,8 @@ static int send_cb(ompi_request_t *req)
         OBJ_RELEASE(context->con);
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
     }
-    return MPI_SUCCESS;
+    req->req_free(&req);
+    return 1;
 }
 
 //receive call back
@@ -175,11 +176,12 @@ static int recv_cb(ompi_request_t *req){
         OBJ_RELEASE(context->con);
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
     }
-    return MPI_SUCCESS;
+    req->req_free(&req);
+    return 1;
 }
 
 int mca_coll_adapt_bcast(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    return mca_coll_adapt_bcast_binary(buff, count, datatype, root, comm, module);
+    return mca_coll_adapt_bcast_two_chains(buff, count, datatype, root, comm, module);
 }
 
 
@@ -331,6 +333,32 @@ int mca_coll_adapt_bcast_two_trees_binomial(void *buff, int count, struct ompi_d
             //print_tree(two_trees[1], ompi_comm_rank(comm));
         }
         return mca_coll_adapt_bcast_two_trees_generic(buff, count, datatype, root, comm, module, coll_comm->cached_two_trees_binomial);
+    }
+    else{
+        return mca_coll_adapt_bcast_binomial(buff, count, datatype, root, comm, module);
+    }
+}
+
+int mca_coll_adapt_bcast_two_chains(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+    size_t type_size;                       //the size of a datatype
+    size_t seg_size = SEG_SIZE;            //the size of a segment
+    int seg_count = count;      //number of datatype in a segment
+    ompi_datatype_type_size(datatype, &type_size);
+    COLL_BASE_COMPUTED_SEGCOUNT(seg_size, type_size, seg_count);
+    int total_num_segs = (count + seg_count - 1) / seg_count;
+    int size = ompi_comm_size(comm);
+    if (total_num_segs > 1 && size >= 3) {
+        mca_coll_base_comm_t *coll_comm = module->base_data;
+        if( !( (coll_comm->cached_two_chains) && (coll_comm->cached_two_chains_root == root) ) ) {
+            if( coll_comm->cached_two_chains ) { /* destroy previous binomial if defined */
+                ompi_coll_base_topo_destroy_two_trees(coll_comm->cached_two_chains);
+            }
+            coll_comm->cached_two_chains = ompi_coll_base_topo_build_two_chains(comm, root);
+            coll_comm->cached_two_chains_root = root;
+            //print_tree(two_trees[0], ompi_comm_rank(comm));
+            //print_tree(two_trees[1], ompi_comm_rank(comm));
+        }
+        return mca_coll_adapt_bcast_two_trees_generic(buff, count, datatype, root, comm, module, coll_comm->cached_two_chains);
     }
     else{
         return mca_coll_adapt_bcast_binomial(buff, count, datatype, root, comm, module);
@@ -610,7 +638,8 @@ static int two_trees_send_cb(ompi_request_t *req)
         OBJ_RELEASE(context->con);
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
     }
-    return MPI_SUCCESS;
+    req->req_free(&req);
+    return 1;
 }
 
 //receive call back
@@ -712,7 +741,8 @@ static int two_trees_recv_cb(ompi_request_t *req){
         OBJ_RELEASE(context->con);
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
     }
-    return MPI_SUCCESS;
+    req->req_free(&req);
+    return 1;
 }
 
 

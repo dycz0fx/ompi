@@ -107,12 +107,12 @@ struct mca_coll_adapt_constant_reduce_context_s {
     opal_mutex_t ** mutex_op_list;   //use to lock each segment when do the reduce op
     ompi_op_t * op;  //reduce operation
     ompi_coll_tree_t * tree;
-    char * accumbuf;   //accumulate buff, used in reduce
+    char ** accumbuf;   //accumulate buff, used in reduce
     opal_free_list_t *inbuf_list;
     opal_list_t *recv_list;    //a list to store the segments which are received and not yet be sent
     ptrdiff_t lower_bound;
     int32_t ongoing_send;   //how many send is posted but not finished
-    
+    char * sbuf;    //input sbuf
 };
 
 typedef struct mca_coll_adapt_constant_reduce_context_s mca_coll_adapt_constant_reduce_context_t;

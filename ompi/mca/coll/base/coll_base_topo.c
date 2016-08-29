@@ -939,6 +939,79 @@ ompi_coll_base_topo_build_two_trees_binomial(struct ompi_communicator_t* comm,
     return two_trees;
 }
 
+ompi_coll_tree_t**
+ompi_coll_base_topo_build_two_chains(struct ompi_communicator_t* comm,
+                                     int root ){
+    int i, j, rank, size, vrank;
+    ompi_coll_tree_t** two_trees;
+    //build the two tree array
+    two_trees = (ompi_coll_tree_t **)malloc(2 * sizeof(ompi_coll_tree_t *));
+    two_trees[0] = (ompi_coll_tree_t*)malloc(sizeof(ompi_coll_tree_t));
+    two_trees[1] = (ompi_coll_tree_t*)malloc(sizeof(ompi_coll_tree_t));
+    if (!two_trees || !two_trees[0] || !two_trees[1]) {
+        OPAL_OUTPUT((ompi_coll_base_framework.framework_output,
+                     "coll:base:topo:build_two_tree PANIC out of memory"));
+        return NULL;
+    }
+    
+    size = ompi_comm_size(comm);
+    rank = ompi_comm_rank(comm);
+    vrank = (rank-root+size-1)%size;    //root has the highest vrank
+    //printf("rank = %d, vrank = %d\n", rank, vrank);
+    int recovered_rank = (vrank+1+root)%size;      //only for test
+    //printf("rank = %d, recovered_rank = %d\n", rank, recovered_rank);   //for test
+    int p = size-1;       //number of node in the two tree, exclude the root
+    
+    //init the two trees
+    two_trees[0]->tree_bmtree   = 1;
+    two_trees[0]->tree_root     = root;
+    two_trees[0]->tree_nextsize = 0;
+    for( i = 0;i < MAXTREEFANOUT; i++ ) {
+        two_trees[0]->tree_next[i] = -1;
+    }
+    
+    two_trees[1]->tree_bmtree   = 1;
+    two_trees[1]->tree_root     = root;
+    two_trees[1]->tree_nextsize = 0;
+    for( i = 0;i < MAXTREEFANOUT; i++ ) {
+        two_trees[1]->tree_next[i] = -1;
+    }
+    if (p <= 1) {
+        return two_trees;
+    }
+    
+    
+    //build the topology
+    //build chain 0
+    if (vrank != p) {
+        if (vrank != p-1) {
+            two_trees[0]->tree_next[0] = (vrank+1+1+root)%size;
+            two_trees[0]->tree_nextsize += 1;
+        }
+        two_trees[0]->tree_prev = (vrank-1+1+root)%size;
+    }
+    else {
+        two_trees[0]->tree_next[0] = (0+1+root)%size;
+        two_trees[0]->tree_nextsize += 1;
+        two_trees[0]->tree_prev = -1;
+    }
+    
+    //build chain 1
+    if (vrank != p) {
+        if (vrank != 0) {
+            two_trees[1]->tree_next[0] = (vrank-1+1+root)%size;
+            two_trees[1]->tree_nextsize += 1;
+        }
+        two_trees[1]->tree_prev = (vrank+1+1+root)%size;
+    }
+    else {
+        two_trees[1]->tree_next[0] = (p-1+1+root)%size;
+        two_trees[1]->tree_nextsize += 1;
+        two_trees[1]->tree_prev = -1;
+    }
+    return two_trees;
+}
+
 int ompi_coll_base_topo_dump_tree (ompi_coll_tree_t* tree, int rank)
 {
     int i;
