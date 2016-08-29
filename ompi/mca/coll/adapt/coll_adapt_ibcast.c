@@ -19,11 +19,18 @@
 #define FREE_LIST_NUM 10    //The start size of the free list
 #define FREE_LIST_MAX 10000  //The max size of the free list
 #define FREE_LIST_INC 10    //The incresment of the free list
+#define TEST printfno
+
+static void printfno(){
+    
+}
 
 
 //send call back
 static int send_cb(ompi_request_t *req)
 {
+    req->req_complete_cb_called = 1;
+
     mca_coll_adapt_ibcast_context_t *context = (mca_coll_adapt_ibcast_context_t *) req->req_complete_cb_data;
     
     //opal_output_init();
@@ -32,8 +39,7 @@ static int send_cb(ompi_request_t *req)
     
     int err;
     
-    //TODO
-    //printf("[%d, %" PRIx64 "]: Send(cb): segment %d to %d at buff %p \n", ompi_comm_rank(context->con->comm), gettid(), context->frag_id, context->peer, (void *)context->buff);
+    TEST("[%d, %" PRIx64 "]: Send(cb): segment %d to %d at buff %p \n", ompi_comm_rank(context->con->comm), gettid(), context->frag_id, context->peer, (void *)context->buff);
 
     opal_mutex_lock (context->con->mutex);
     //int sent_id = opal_atomic_add_32(&(context->con->send_array[context->child_id]), 1);

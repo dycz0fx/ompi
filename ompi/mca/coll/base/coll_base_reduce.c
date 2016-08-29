@@ -372,6 +372,7 @@ int ompi_coll_base_reduce_intra_chain( const void *sendbuf, void *recvbuf, int c
                                            segcount, max_outstanding_reqs );
 }
 
+int t_count = 0;
 
 int ompi_coll_base_reduce_intra_pipeline( const void *sendbuf, void *recvbuf,
                                            int count, ompi_datatype_t* datatype,
@@ -381,6 +382,9 @@ int ompi_coll_base_reduce_intra_pipeline( const void *sendbuf, void *recvbuf,
                                            uint32_t segsize,
                                            int max_outstanding_reqs  )
 {
+    if(t_count++ == 0){
+        printf("Base reduce pipeline\n");
+    }
     int segcount = count;
     size_t typelng;
     mca_coll_base_module_t *base_module = (mca_coll_base_module_t*) module;

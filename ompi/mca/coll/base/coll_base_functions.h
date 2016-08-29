@@ -356,6 +356,10 @@ struct mca_coll_base_comm_t {
     ompi_coll_tree_t **cached_two_trees_binomial;
     int cached_two_trees_binomial_root;
     
+    /* two chains */
+    ompi_coll_tree_t **cached_two_chains;
+    int cached_two_chains_root;
+    
     /* topo */
     int *cached_topo;
     struct ompi_communicator_t* cached_old_comm;
