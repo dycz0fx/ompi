@@ -3,9 +3,9 @@
 //TODO: move receve before send
 #include "ompi_config.h"
 #include "ompi/mca/pml/pml.h"
-#include "coll_adapt.h"
-#include "coll_adapt_algorithms.h"
-#include "coll_adapt_context.h"
+#include "coll_adapt_cuda.h"
+#include "coll_adapt_cuda_algorithms.h"
+#include "coll_adapt_cuda_context.h"
 #include "ompi/mca/coll/base/coll_tags.h"
 #include "ompi/mca/coll/base/coll_base_functions.h"        //COLL_BASE_COMPUTED_SEGCOUNT
 #include "opal/util/bit_ops.h"
@@ -29,7 +29,7 @@ static int send_cb(ompi_request_t *req)
 {
     req->req_complete_cb_called = 1;
     
-    mca_coll_adapt_bcast_context_t *context = (mca_coll_adapt_bcast_context_t *) req->req_complete_cb_data;
+    mca_coll_adapt_cuda_bcast_context_t *context = (mca_coll_adapt_cuda_bcast_context_t *) req->req_complete_cb_data;
     
     int err;
     
@@ -42,7 +42,7 @@ static int send_cb(ompi_request_t *req)
     if (sent_id < context->con->num_recv_segs) {
         ompi_request_t *send_req;
         int new_id = context->con->recv_array[sent_id];
-        mca_coll_adapt_bcast_context_t * send_context = (mca_coll_adapt_bcast_context_t *) opal_free_list_wait(context->con->context_list);
+        mca_coll_adapt_cuda_bcast_context_t * send_context = (mca_coll_adapt_cuda_bcast_context_t *) opal_free_list_wait(context->con->context_list);
         send_context->buff = context->buff + (new_id - context->frag_id) * context->con->real_seg_size;
         send_context->frag_id = new_id;
         send_context->child_id = context->child_id;
@@ -91,7 +91,7 @@ static int recv_cb(ompi_request_t *req){
     req->req_complete_cb_called = 1;
     
     //get necessary info from request
-    mca_coll_adapt_bcast_context_t *context = (mca_coll_adapt_bcast_context_t *) req->req_complete_cb_data;
+    mca_coll_adapt_cuda_bcast_context_t *context = (mca_coll_adapt_cuda_bcast_context_t *) req->req_complete_cb_data;
     
     int err, i;
     
@@ -107,7 +107,7 @@ static int recv_cb(ompi_request_t *req){
     if (new_id < context->con->num_segs) {
         ompi_request_t *recv_req;
         //get new context item from free list
-        mca_coll_adapt_bcast_context_t * recv_context = (mca_coll_adapt_bcast_context_t *) opal_free_list_wait(context->con->context_list);
+        mca_coll_adapt_cuda_bcast_context_t * recv_context = (mca_coll_adapt_cuda_bcast_context_t *) opal_free_list_wait(context->con->context_list);
         recv_context->buff = context->buff + (new_id - context->frag_id) * context->con->real_seg_size;
         recv_context->frag_id = new_id;
         recv_context->child_id = context->child_id;
@@ -137,7 +137,7 @@ static int recv_cb(ompi_request_t *req){
             if (context->frag_id == (context->con->num_segs - 1)) {
                 send_count = context->con->count - context->frag_id * context->con->seg_count;
             }
-            mca_coll_adapt_bcast_context_t * send_context = (mca_coll_adapt_bcast_context_t *) opal_free_list_wait(context->con->context_list);
+            mca_coll_adapt_cuda_bcast_context_t * send_context = (mca_coll_adapt_cuda_bcast_context_t *) opal_free_list_wait(context->con->context_list);
             send_context->buff = context->buff;
             send_context->frag_id = context->frag_id;
             send_context->child_id = i;
@@ -180,14 +180,14 @@ static int recv_cb(ompi_request_t *req){
     return 1;
 }
 
-int mca_coll_adapt_bcast(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    printf("adapt\n");
-    return mca_coll_adapt_bcast_pipeline(buff, count, datatype, root, comm, module);
+int mca_coll_adapt_cuda_bcast(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+    printf("cuda pipeline\n");
+    return mca_coll_adapt_cuda_bcast_pipeline(buff, count, datatype, root, comm, module);
 }
 
 
 // broadcast using binomial tree with pipeline
-int mca_coll_adapt_bcast_binomial(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_cuda_bcast_binomial(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     mca_coll_base_comm_t *coll_comm = module->base_data;
     if( !( (coll_comm->cached_bmtree) && (coll_comm->cached_bmtree_root == root) ) ) {
         if( coll_comm->cached_bmtree ) { /* destroy previous binomial if defined */
@@ -197,10 +197,10 @@ int mca_coll_adapt_bcast_binomial(void *buff, int count, struct ompi_datatype_t 
         coll_comm->cached_bmtree_root = root;
     }
     //print_tree(coll_comm->cached_bmtree, ompi_comm_rank(comm));
-    return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_bmtree);
+    return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_bmtree);
 }
 
-int mca_coll_adapt_bcast_in_order_binomial(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_cuda_bcast_in_order_binomial(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     mca_coll_base_comm_t *coll_comm = module->base_data;
     if( !( (coll_comm->cached_in_order_bmtree) && (coll_comm->cached_in_order_bmtree_root == root) ) ) {
         if( coll_comm->cached_in_order_bmtree ) { /* destroy previous binomial if defined */
@@ -209,10 +209,10 @@ int mca_coll_adapt_bcast_in_order_binomial(void *buff, int count, struct ompi_da
         coll_comm->cached_in_order_bmtree = ompi_coll_base_topo_build_in_order_bmtree(comm, root);
         coll_comm->cached_in_order_bmtree_root = root;
     }
-    return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_in_order_bmtree);
+    return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_in_order_bmtree);
 }
 
-int mca_coll_adapt_bcast_binary(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_cuda_bcast_binary(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     mca_coll_base_comm_t *coll_comm = module->base_data;
     if( !( (coll_comm->cached_bintree) && (coll_comm->cached_bintree_root == root) ) ) {
         if( coll_comm->cached_bintree ) { /* destroy previous binomial if defined */
@@ -221,10 +221,10 @@ int mca_coll_adapt_bcast_binary(void *buff, int count, struct ompi_datatype_t *d
         coll_comm->cached_bintree = ompi_coll_base_topo_build_tree(2, comm, root);
         coll_comm->cached_bintree_root = root;
     }
-    return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_bintree);
+    return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_bintree);
 }
 
-int mca_coll_adapt_bcast_pipeline(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_cuda_bcast_pipeline(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     mca_coll_base_comm_t *coll_comm = module->base_data;
     if( !( (coll_comm->cached_pipeline) && (coll_comm->cached_pipeline_root == root) ) ) {
         if( coll_comm->cached_pipeline ) { /* destroy previous binomial if defined */
@@ -233,10 +233,10 @@ int mca_coll_adapt_bcast_pipeline(void *buff, int count, struct ompi_datatype_t 
         coll_comm->cached_pipeline = ompi_coll_base_topo_build_chain(1, comm, root);
         coll_comm->cached_pipeline_root = root;
     }
-    return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_pipeline);
+    return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_pipeline);
 }
 
-int mca_coll_adapt_bcast_chain(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_cuda_bcast_chain(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     mca_coll_base_comm_t *coll_comm = module->base_data;
     if( !( (coll_comm->cached_chain) && (coll_comm->cached_chain_root == root) ) ) {
         if( coll_comm->cached_chain ) { /* destroy previous binomial if defined */
@@ -245,10 +245,10 @@ int mca_coll_adapt_bcast_chain(void *buff, int count, struct ompi_datatype_t *da
         coll_comm->cached_chain = ompi_coll_base_topo_build_chain(4, comm, root);
         coll_comm->cached_chain_root = root;
     }
-    return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_chain);
+    return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_chain);
 }
 
-int mca_coll_adapt_bcast_linear(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_cuda_bcast_linear(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     int fanout = ompi_comm_size(comm) - 1;
     ompi_coll_tree_t * tree;
     if (fanout > 1) {
@@ -257,10 +257,10 @@ int mca_coll_adapt_bcast_linear(void *buff, int count, struct ompi_datatype_t *d
     else{
         tree = ompi_coll_base_topo_build_chain(1, comm, root);
     }
-    return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, tree);
+    return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, tree);
 }
 
-int mca_coll_adapt_bcast_topoaware_linear(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_cuda_bcast_topoaware_linear(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     mca_coll_base_comm_t *coll_comm = module->base_data;
     if( !( (coll_comm->cached_topolinear) && (coll_comm->cached_topolinear_root == root) ) ) {
         if( coll_comm->cached_topolinear ) { /* destroy previous binomial if defined */
@@ -269,10 +269,10 @@ int mca_coll_adapt_bcast_topoaware_linear(void *buff, int count, struct ompi_dat
         coll_comm->cached_topolinear = ompi_coll_base_topo_build_topoaware_linear(comm, root, module);
         coll_comm->cached_topolinear_root = root;
     }
-    return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_topolinear);
+    return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_topolinear);
 }
 
-int mca_coll_adapt_bcast_topoaware_chain(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_cuda_bcast_topoaware_chain(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     mca_coll_base_comm_t *coll_comm = module->base_data;
     if( !( (coll_comm->cached_topochain) && (coll_comm->cached_topochain_root == root) ) ) {
         if( coll_comm->cached_topochain ) { /* destroy previous binomial if defined */
@@ -284,10 +284,10 @@ int mca_coll_adapt_bcast_topoaware_chain(void *buff, int count, struct ompi_data
     else {
     }
     //print_tree(coll_comm->cached_topochain, ompi_comm_rank(comm));
-    return mca_coll_adapt_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_topochain);
+    return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_topochain);
 }
 
-int mca_coll_adapt_bcast_two_trees_binary(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_cuda_bcast_two_trees_binary(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     
     size_t type_size;                       //the size of a datatype
     size_t seg_size = SEG_SIZE;            //the size of a segment
@@ -307,14 +307,14 @@ int mca_coll_adapt_bcast_two_trees_binary(void *buff, int count, struct ompi_dat
             //print_tree(two_trees[0], ompi_comm_rank(comm));
             //print_tree(two_trees[1], ompi_comm_rank(comm));
         }
-        return mca_coll_adapt_bcast_two_trees_generic(buff, count, datatype, root, comm, module, coll_comm->cached_two_trees_binary);
+        return mca_coll_adapt_cuda_bcast_two_trees_generic(buff, count, datatype, root, comm, module, coll_comm->cached_two_trees_binary);
     }
     else{
-        return mca_coll_adapt_bcast_binary(buff, count, datatype, root, comm, module);
+        return mca_coll_adapt_cuda_bcast_binary(buff, count, datatype, root, comm, module);
     }
 }
 
-int mca_coll_adapt_bcast_two_trees_binomial(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_cuda_bcast_two_trees_binomial(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     size_t type_size;                       //the size of a datatype
     size_t seg_size = SEG_SIZE;            //the size of a segment
     int seg_count = count;      //number of datatype in a segment
@@ -333,14 +333,14 @@ int mca_coll_adapt_bcast_two_trees_binomial(void *buff, int count, struct ompi_d
             //print_tree(two_trees[0], ompi_comm_rank(comm));
             //print_tree(two_trees[1], ompi_comm_rank(comm));
         }
-        return mca_coll_adapt_bcast_two_trees_generic(buff, count, datatype, root, comm, module, coll_comm->cached_two_trees_binomial);
+        return mca_coll_adapt_cuda_bcast_two_trees_generic(buff, count, datatype, root, comm, module, coll_comm->cached_two_trees_binomial);
     }
     else{
-        return mca_coll_adapt_bcast_binomial(buff, count, datatype, root, comm, module);
+        return mca_coll_adapt_cuda_bcast_binomial(buff, count, datatype, root, comm, module);
     }
 }
 
-int mca_coll_adapt_bcast_two_chains(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+int mca_coll_adapt_cuda_bcast_two_chains(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     size_t type_size;                       //the size of a datatype
     size_t seg_size = SEG_SIZE;            //the size of a segment
     int seg_count = count;      //number of datatype in a segment
@@ -359,14 +359,14 @@ int mca_coll_adapt_bcast_two_chains(void *buff, int count, struct ompi_datatype_
             //print_tree(two_trees[0], ompi_comm_rank(comm));
             //print_tree(two_trees[1], ompi_comm_rank(comm));
         }
-        return mca_coll_adapt_bcast_two_trees_generic(buff, count, datatype, root, comm, module, coll_comm->cached_two_chains);
+        return mca_coll_adapt_cuda_bcast_two_trees_generic(buff, count, datatype, root, comm, module, coll_comm->cached_two_chains);
     }
     else{
-        return mca_coll_adapt_bcast_binomial(buff, count, datatype, root, comm, module);
+        return mca_coll_adapt_cuda_bcast_binomial(buff, count, datatype, root, comm, module);
     }
 }
 
-int mca_coll_adapt_bcast_generic(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t* tree){
+int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t* tree){
     int i, j;       //temp variable for iteration
     int size;       //size of the communicator
     int rank;       //rank of this node
@@ -388,9 +388,9 @@ int mca_coll_adapt_bcast_generic(void *buff, int count, struct ompi_datatype_t *
     //set up free list
     context_list = OBJ_NEW(opal_free_list_t);
     opal_free_list_init(context_list,
-                        sizeof(mca_coll_adapt_bcast_context_t),
+                        sizeof(mca_coll_adapt_cuda_bcast_context_t),
                         opal_cache_line_size,
-                        OBJ_CLASS(mca_coll_adapt_bcast_context_t),
+                        OBJ_CLASS(mca_coll_adapt_cuda_bcast_context_t),
                         0,opal_cache_line_size,
                         FREE_LIST_NUM,
                         FREE_LIST_MAX,
@@ -434,7 +434,7 @@ int mca_coll_adapt_bcast_generic(void *buff, int count, struct ompi_datatype_t *
     temp_request->req_status._ucount = 0;
     
     //Set constant context for send and recv call back
-    mca_coll_adapt_constant_bcast_context_t *con = OBJ_NEW(mca_coll_adapt_constant_bcast_context_t);
+    mca_coll_adapt_cuda_constant_bcast_context_t *con = OBJ_NEW(mca_coll_adapt_cuda_constant_bcast_context_t);
     con->count = count;
     con->seg_count = seg_count;
     con->datatype = datatype;
@@ -482,7 +482,7 @@ int mca_coll_adapt_bcast_generic(void *buff, int count, struct ompi_datatype_t *
                 send_count = count - i * seg_count;
             }
             for (j=0; j<tree->tree_nextsize; j++) {
-                mca_coll_adapt_bcast_context_t * context = (mca_coll_adapt_bcast_context_t *) opal_free_list_wait(context_list);
+                mca_coll_adapt_cuda_bcast_context_t * context = (mca_coll_adapt_cuda_bcast_context_t *) opal_free_list_wait(context_list);
                 context->buff = (char *)buff + i * real_seg_size;
                 context->frag_id = i;
                 context->child_id = j;              //the id of peer in in tree->tree_next
@@ -540,7 +540,7 @@ int mca_coll_adapt_bcast_generic(void *buff, int count, struct ompi_datatype_t *
             if (i == (num_segs - 1)) {
                 recv_count = count - i * seg_count;
             }
-            mca_coll_adapt_bcast_context_t * context = (mca_coll_adapt_bcast_context_t *) opal_free_list_wait(context_list);
+            mca_coll_adapt_cuda_bcast_context_t * context = (mca_coll_adapt_cuda_bcast_context_t *) opal_free_list_wait(context_list);
             
             context->buff = (char *)buff + i * real_seg_size;
             context->frag_id = i;
@@ -584,7 +584,7 @@ int mca_coll_adapt_bcast_generic(void *buff, int count, struct ompi_datatype_t *
 //send call back
 static int two_trees_send_cb(ompi_request_t *req)
 {
-    mca_coll_adapt_bcast_two_trees_context_t *context = (mca_coll_adapt_bcast_two_trees_context_t *) req->req_complete_cb_data;
+    mca_coll_adapt_cuda_bcast_two_trees_context_t *context = (mca_coll_adapt_cuda_bcast_two_trees_context_t *) req->req_complete_cb_data;
     
     int err;
     
@@ -601,7 +601,7 @@ static int two_trees_send_cb(ompi_request_t *req)
         if (new_id == (context->con->num_segs[0] + context->con->num_segs[1]- 1)) {
             send_count = context->con->count - new_id * context->con->seg_count;
         }
-        mca_coll_adapt_bcast_two_trees_context_t * send_context = (mca_coll_adapt_bcast_two_trees_context_t *) opal_free_list_wait(context->con->context_lists[context->tree]);
+        mca_coll_adapt_cuda_bcast_two_trees_context_t * send_context = (mca_coll_adapt_cuda_bcast_two_trees_context_t *) opal_free_list_wait(context->con->context_lists[context->tree]);
         send_context->buff = context->buff + (new_id - context->frag_id) * context->con->real_seg_size;
         send_context->frag_id = new_id;
         send_context->child_id = context->child_id;
@@ -646,7 +646,7 @@ static int two_trees_send_cb(ompi_request_t *req)
 //receive call back
 static int two_trees_recv_cb(ompi_request_t *req){
     //get necessary info from request
-    mca_coll_adapt_bcast_two_trees_context_t *context = (mca_coll_adapt_bcast_two_trees_context_t *) req->req_complete_cb_data;
+    mca_coll_adapt_cuda_bcast_two_trees_context_t *context = (mca_coll_adapt_cuda_bcast_two_trees_context_t *) req->req_complete_cb_data;
     
     int err, i;
     
@@ -673,7 +673,7 @@ static int two_trees_recv_cb(ompi_request_t *req){
             recv_count = context->con->count - new_id * context->con->seg_count;
         }
         //get new context item from free list
-        mca_coll_adapt_bcast_two_trees_context_t * recv_context = (mca_coll_adapt_bcast_two_trees_context_t *) opal_free_list_wait(context->con->context_lists[context->tree]);
+        mca_coll_adapt_cuda_bcast_two_trees_context_t * recv_context = (mca_coll_adapt_cuda_bcast_two_trees_context_t *) opal_free_list_wait(context->con->context_lists[context->tree]);
         recv_context->buff = context->buff + (new_id - context->frag_id) * context->con->real_seg_size;
         recv_context->frag_id = new_id;
         recv_context->child_id = context->child_id;
@@ -700,7 +700,7 @@ static int two_trees_recv_cb(ompi_request_t *req){
             if (context->frag_id == (context->con->num_segs[0] + context->con->num_segs[1] - 1)) {
                 send_count = context->con->count - context->frag_id * context->con->seg_count;
             }
-            mca_coll_adapt_bcast_two_trees_context_t * send_context = (mca_coll_adapt_bcast_two_trees_context_t *) opal_free_list_wait(context->con->context_lists[context->tree]);
+            mca_coll_adapt_cuda_bcast_two_trees_context_t * send_context = (mca_coll_adapt_cuda_bcast_two_trees_context_t *) opal_free_list_wait(context->con->context_lists[context->tree]);
             send_context->buff = context->buff;
             send_context->frag_id = context->frag_id;
             send_context->child_id = i;
@@ -747,7 +747,7 @@ static int two_trees_recv_cb(ompi_request_t *req){
 }
 
 
-int mca_coll_adapt_bcast_two_trees_generic(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t** trees){
+int mca_coll_adapt_cuda_bcast_two_trees_generic(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t** trees){
     int i, j, t;       //temp variable for iteration
     int size;       //size of the communicator
     int rank;       //rank of this node
@@ -774,9 +774,9 @@ int mca_coll_adapt_bcast_two_trees_generic(void *buff, int count, struct ompi_da
     context_lists = (opal_free_list_t **)malloc(sizeof(opal_free_list_t *)*2);
     context_lists[0] = OBJ_NEW(opal_free_list_t);
     opal_free_list_init(context_lists[0],
-                        sizeof(mca_coll_adapt_bcast_two_trees_context_t),
+                        sizeof(mca_coll_adapt_cuda_bcast_two_trees_context_t),
                         opal_cache_line_size,
-                        OBJ_CLASS(mca_coll_adapt_bcast_two_trees_context_t),
+                        OBJ_CLASS(mca_coll_adapt_cuda_bcast_two_trees_context_t),
                         0,opal_cache_line_size,
                         FREE_LIST_NUM,
                         FREE_LIST_MAX,
@@ -784,9 +784,9 @@ int mca_coll_adapt_bcast_two_trees_generic(void *buff, int count, struct ompi_da
                         NULL, 0, NULL, NULL, NULL);
     context_lists[1] = OBJ_NEW(opal_free_list_t);
     opal_free_list_init(context_lists[1],
-                        sizeof(mca_coll_adapt_bcast_two_trees_context_t),
+                        sizeof(mca_coll_adapt_cuda_bcast_two_trees_context_t),
                         opal_cache_line_size,
-                        OBJ_CLASS(mca_coll_adapt_bcast_two_trees_context_t),
+                        OBJ_CLASS(mca_coll_adapt_cuda_bcast_two_trees_context_t),
                         0,opal_cache_line_size,
                         FREE_LIST_NUM,
                         FREE_LIST_MAX,
@@ -846,7 +846,7 @@ int mca_coll_adapt_bcast_two_trees_generic(void *buff, int count, struct ompi_da
     temp_request->req_status._ucount = 0;
     
     //Set constant context for send and recv call back
-    mca_coll_adapt_constant_bcast_two_trees_context_t *con = OBJ_NEW(mca_coll_adapt_constant_bcast_two_trees_context_t);
+    mca_coll_adapt_cuda_constant_bcast_two_trees_context_t *con = OBJ_NEW(mca_coll_adapt_cuda_constant_bcast_two_trees_context_t);
     con->count = count;
     con->seg_count = seg_count;
     con->datatype = datatype;
@@ -912,7 +912,7 @@ int mca_coll_adapt_bcast_two_trees_generic(void *buff, int count, struct ompi_da
                     send_count = count - (num_segs[0]+i) * seg_count;
                 }
                 for (j=0; j<trees[t]->tree_nextsize; j++) {
-                    mca_coll_adapt_bcast_two_trees_context_t * context = (mca_coll_adapt_bcast_two_trees_context_t *) opal_free_list_wait(context_lists[t]);
+                    mca_coll_adapt_cuda_bcast_two_trees_context_t * context = (mca_coll_adapt_cuda_bcast_two_trees_context_t *) opal_free_list_wait(context_lists[t]);
                     context->buff = (char *)buff + recv_arrays[t][i] * real_seg_size;
                     context->frag_id = recv_arrays[t][i];
                     context->child_id = j;              //the id of peer in in tree->tree_next
@@ -985,7 +985,7 @@ int mca_coll_adapt_bcast_two_trees_generic(void *buff, int count, struct ompi_da
                 if (t == 1 && i == (num_segs[1] - 1)) {
                     recv_count = count - (num_segs[0]+i) * seg_count;
                 }
-                mca_coll_adapt_bcast_two_trees_context_t * context = (mca_coll_adapt_bcast_two_trees_context_t *) opal_free_list_wait(context_lists[t]);
+                mca_coll_adapt_cuda_bcast_two_trees_context_t * context = (mca_coll_adapt_cuda_bcast_two_trees_context_t *) opal_free_list_wait(context_lists[t]);
                 context->buff = (char *)buff + (t*num_segs[0]+i) * real_seg_size;
                 context->frag_id = t*num_segs[0]+i;
                 context->peer = trees[t]->tree_prev;
