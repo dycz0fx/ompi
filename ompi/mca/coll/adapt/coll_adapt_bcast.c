@@ -181,7 +181,8 @@ static int recv_cb(ompi_request_t *req){
 }
 
 int mca_coll_adapt_bcast(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    return mca_coll_adapt_bcast_two_chains(buff, count, datatype, root, comm, module);
+    return mca_coll_adapt_bcast_linear(buff, count, datatype, root, comm, module);
+    
 }
 
 
@@ -559,12 +560,10 @@ int mca_coll_adapt_bcast_generic(void *buff, int count, struct ompi_datatype_t *
                 
             }
         }
-        
         opal_mutex_unlock(mutex);
         ompi_request_wait(&temp_request, MPI_STATUS_IGNORE);
         
     }
-    
     
     TEST("[%d, %" PRIx64 "]: End of bcast\n", rank, gettid());
     

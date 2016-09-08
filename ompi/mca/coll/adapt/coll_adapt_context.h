@@ -285,6 +285,7 @@ struct mca_coll_adapt_constant_allreduce_context_s {
     int adjsize;
     int sendbuf_ready;
     int inbuf_ready;
+    int last_send;
 };
 
 typedef struct mca_coll_adapt_constant_allreduce_context_s mca_coll_adapt_constant_allreduce_context_t;

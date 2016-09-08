@@ -190,7 +190,7 @@ mca_coll_adapt_comm_query(struct ompi_communicator_t *comm, int *priority)
     //adapt_module->super.coll_ibcast     = mca_coll_adapt_ibcast;
     //adapt_module->super.coll_ireduce    = mca_coll_adapt_ireduce;
     //adapt_module->super.coll_ialltoallv = mca_coll_adapt_ialltoallv;
-    //adapt_module->super.coll_iallreduce = mca_coll_adapt_iallreduce;
+    adapt_module->super.coll_iallreduce = mca_coll_adapt_iallreduce;
 
     /* general n fan out tree */
     data->cached_ntree = NULL;

@@ -133,9 +133,9 @@ static int send_cb(ompi_request_t *req){
             OBJ_RELEASE(context->con->inbuf_list);
             free(context->con->next_recv_segs);
         }
+        OBJ_RELEASE(context->con);
+        OBJ_RELEASE(context->con);
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
-        OBJ_RELEASE(context->con);
-        OBJ_RELEASE(context->con);
         OBJ_RELEASE(temp);
         ompi_request_complete(temp_req, 1);
         return 1;
@@ -281,9 +281,9 @@ static int recv_cb(ompi_request_t *req){
             OBJ_RELEASE(context->con->inbuf_list);
             free(context->con->next_recv_segs);
         }
+        OBJ_RELEASE(context->con);
+        OBJ_RELEASE(context->con);
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
-        OBJ_RELEASE(context->con);
-        OBJ_RELEASE(context->con);
         OBJ_RELEASE(temp);
         ompi_request_complete(temp_req, 1);
         return 1;

@@ -17,10 +17,14 @@
 #define FREE_LIST_MAX_INBUF_LIST 10000  //The max size of the context free list
 #define FREE_LIST_INC_INBUF_LIST 2    //The incresment of the context free list
 
-//TODO: add more error handler
+#define TEST printfno
+
+static void printfno(){
+    
+}
 
 int mca_coll_adapt_allreduce_intra_nonoverlapping(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    //printf("In adapt allreduce_intra_nonoverlapping\n");
+    TEST("In adapt allreduce_intra_nonoverlapping\n");
     int err, rank;
     rank = ompi_comm_rank(comm);
     
@@ -49,8 +53,9 @@ static int send_cb(ompi_request_t *req){
     req->req_complete_cb_called = 1;
     
     mca_coll_adapt_allreduce_context_t *context = (mca_coll_adapt_allreduce_context_t *) req->req_complete_cb_data;
+    int rank = ompi_comm_rank(context->con->comm);
     opal_atomic_add_32(&(context->con->sendbuf_ready), 1);
-    //printf("[%d]: send_cb, peer = %d, distance = %d, inbuf_ready = %d, sendbuf_ready = %d\n", ompi_comm_rank(context->con->comm), context->peer, context->distance, context->con->inbuf_ready, context->con->sendbuf_ready);
+    TEST("[%d]: send_cb, peer = %d, distance = %d, inbuf_ready = %d, sendbuf_ready = %d\n", ompi_comm_rank(context->con->comm), context->peer, context->distance, context->con->inbuf_ready, context->con->sendbuf_ready);
     int err;
     //set new distance
     int new_distance = 0;
@@ -82,7 +87,7 @@ static int send_cb(ompi_request_t *req){
             OBJ_RETAIN(recv_context->con);
             //create a recv request
             ompi_request_t *recv_req;
-            //printf("[%d]: Recv(start in send cb): distance %d from %d\n", ompi_comm_rank(recv_context->con->comm), recv_context->distance, recv_context->peer);
+            TEST("[%d]: Recv(start in send cb): distance %d from %d\n", ompi_comm_rank(recv_context->con->comm), recv_context->distance, recv_context->peer);
             err = MCA_PML_CALL(irecv(inbuf->buff-context->con->lower_bound, recv_context->con->count, recv_context->con->datatype, recv_context->peer, recv_context->distance, recv_context->con->comm, &recv_req));
             if (MPI_SUCCESS != err) {
                 return err;
@@ -115,7 +120,7 @@ static int send_cb(ompi_request_t *req){
             
             //create a send request
             ompi_request_t *send_req;
-            //printf("[%d]: Send(start in send cb): distance %d to %d\n", ompi_comm_rank(send_context->con->comm), send_context->distance, send_context->peer);
+            TEST("[%d]: Send(start in send cb): distance %d to %d\n", ompi_comm_rank(send_context->con->comm), send_context->distance, send_context->peer);
             err = MCA_PML_CALL(isend(send_context->con->sendbuf, send_context->con->count, send_context->con->datatype, send_context->peer, send_context->distance, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
             if (MPI_SUCCESS != err) {
                 return err;
@@ -130,7 +135,6 @@ static int send_cb(ompi_request_t *req){
         if (new_distance >= context->con->adjsize){
             if (context->newrank >=0) {
                 //at last, send to rank - 1
-                int rank = ompi_comm_rank(context->con->comm);
                 if (rank < (2 * context->con->extra_ranks) && rank % 2 == 1) {
                     mca_coll_adapt_allreduce_context_t * send_context = (mca_coll_adapt_allreduce_context_t *) opal_free_list_wait(context->con->context_list);
                     send_context->inbuf = NULL;
@@ -142,7 +146,7 @@ static int send_cb(ompi_request_t *req){
                     
                     //create a send request
                     ompi_request_t *send_req;
-                    //printf("[%d]: Send(start in send cb, Last): distance %d to %d\n", ompi_comm_rank(send_context->con->comm), send_context->distance, send_context->peer);
+                    TEST("[%d]: Send(start in send cb, Last): distance %d to %d\n", ompi_comm_rank(send_context->con->comm), send_context->distance, send_context->peer);
                     err = MCA_PML_CALL(isend(send_context->con->sendbuf, send_context->con->count, send_context->con->datatype, send_context->peer, send_context->distance, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
                     if (MPI_SUCCESS != err) {
                         return err;
@@ -158,21 +162,25 @@ static int send_cb(ompi_request_t *req){
         }
     }
     
-    //this is the last send
-    if (new_distance >= context->con->adjsize || context->newrank < 0) {
+    //this is the last send the node with newrank < 0 only do one send
+    if (new_distance >= context->con->adjsize || context->newrank < 0 ||             context->con->last_send == 1) {
         opal_atomic_add_32(&(context->con->complete), 1);
-        //printf("[%d]: last send, complete = %d\n", ompi_comm_rank(context->con->comm), context->con->complete);
+        if (context->newrank >=0 && rank < (2 * context->con->extra_ranks) && rank % 2 == 1 && context->con->last_send == 0) {
+            opal_atomic_add_32(&(context->con->complete), -1);
+            context->con->last_send = 1;
+        }
+        TEST("[%d]: last send, complete = %d, last_send = %d\n", ompi_comm_rank(context->con->comm), context->con->complete, context->con->last_send);
         if (context->con->complete == 2) {
             //signal
-            //printf("[%d]: last send, signal\n", ompi_comm_rank(context->con->comm));
+            TEST("[%d]: last send, signal\n", ompi_comm_rank(context->con->comm));
             ompi_request_t *temp_req = context->con->request;
             opal_free_list_t * temp = context->con->context_list;
-            OBJ_RELEASE(context->con);
-            opal_free_list_return(temp, (opal_free_list_item_t*)context);
-            OBJ_RELEASE(context->con);
             OBJ_RELEASE(context->con->inbuf_list);
             OBJ_RELEASE(context->con->context_list);
             free(context->con->sendbuf);
+            OBJ_RELEASE(context->con);
+            OBJ_RELEASE(context->con);
+            opal_free_list_return(temp, (opal_free_list_item_t*)context);
             OPAL_THREAD_LOCK(&ompi_request_lock);
             ompi_request_complete(temp_req, 1);
             OPAL_THREAD_UNLOCK(&ompi_request_lock);
@@ -183,7 +191,8 @@ static int send_cb(ompi_request_t *req){
             opal_free_list_return(temp, (opal_free_list_item_t*)context);
         }
     }
-    return MPI_SUCCESS;
+    req->req_free(&req);
+    return 1;
 }
 
 static int recv_cb(ompi_request_t *req){
@@ -193,7 +202,7 @@ static int recv_cb(ompi_request_t *req){
     mca_coll_adapt_allreduce_context_t *context = (mca_coll_adapt_allreduce_context_t *) req->req_complete_cb_data;
 
     opal_atomic_add_32(&(context->con->inbuf_ready), 1);
-    //printf("[%d]: recv_cb, peer = %d, distance = %d, inbuf_ready = %d, sendbuf_ready = %d\n", ompi_comm_rank(context->con->comm), context->peer, context->distance, context->con->inbuf_ready, context->con->sendbuf_ready);
+    TEST("[%d]: recv_cb, peer = %d, distance = %d, inbuf_ready = %d, sendbuf_ready = %d\n", ompi_comm_rank(context->con->comm), context->peer, context->distance, context->con->inbuf_ready, context->con->sendbuf_ready);
 
     int err;
     //set new distance
@@ -226,7 +235,7 @@ static int recv_cb(ompi_request_t *req){
             OBJ_RETAIN(recv_context->con);
             //create a recv request
             ompi_request_t *recv_req;
-            //printf("[%d]: Recv(start in recv cb): distance %d from %d\n", ompi_comm_rank(recv_context->con->comm), recv_context->distance, recv_context->peer);
+            TEST("[%d]: Recv(start in recv cb): distance %d from %d\n", ompi_comm_rank(recv_context->con->comm), recv_context->distance, recv_context->peer);
             err = MCA_PML_CALL(irecv(inbuf->buff-context->con->lower_bound, recv_context->con->count, recv_context->con->datatype, recv_context->peer, recv_context->distance, recv_context->con->comm, &recv_req));
             if (MPI_SUCCESS != err) {
                 return err;
@@ -259,7 +268,7 @@ static int recv_cb(ompi_request_t *req){
             
             //create a send request
             ompi_request_t *send_req;
-            //printf("[%d]: Send(start in recv cb): distance %d to %d\n", ompi_comm_rank(recv_context->con->comm), recv_context->distance, recv_context->peer);
+            TEST("[%d]: Send(start in recv cb): distance %d to %d\n", ompi_comm_rank(recv_context->con->comm), recv_context->distance, recv_context->peer);
 
             err = MCA_PML_CALL(isend(send_context->con->sendbuf, send_context->con->count, send_context->con->datatype, send_context->peer, send_context->distance, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
             if (MPI_SUCCESS != err) {
@@ -287,7 +296,7 @@ static int recv_cb(ompi_request_t *req){
                     
                     //create a send request
                     ompi_request_t *send_req;
-                    //printf("[%d]: Send(start in recv cb, Last): distance %d to %d\n", ompi_comm_rank(send_context->con->comm), send_context->distance, send_context->peer);
+                    TEST("[%d]: Send(start in recv cb, Last): distance %d to %d\n", ompi_comm_rank(send_context->con->comm), send_context->distance, send_context->peer);
                     err = MCA_PML_CALL(isend(send_context->con->sendbuf, send_context->con->count, send_context->con->datatype, send_context->peer, send_context->distance, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
                     if (MPI_SUCCESS != err) {
                         return err;
@@ -303,24 +312,24 @@ static int recv_cb(ompi_request_t *req){
         }
     }
     
-    //this is the last recv
+    //this is the last recv, the node with newrank < 0 only do one recv
     if (new_distance >= context->con->adjsize || context->newrank < 0){
         opal_atomic_add_32(&(context->con->complete), 1);
-        //printf("[%d]: last recv, complete = %d\n", ompi_comm_rank(context->con->comm), context->con->complete);
+        TEST("[%d]: last recv, complete = %d\n", ompi_comm_rank(context->con->comm), context->con->complete);
         if (context->con->complete == 2) {
             //signal
-            //printf("[%d]: last recv, signal\n", ompi_comm_rank(context->con->comm));
+            TEST("[%d]: last recv, signal\n", ompi_comm_rank(context->con->comm));
             ompi_request_t *temp_req = context->con->request;
             if (context->newrank > 0) {
                 opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)context->inbuf);
             }
             opal_free_list_t * temp = context->con->context_list;
-            OBJ_RELEASE(context->con);
-            opal_free_list_return(temp, (opal_free_list_item_t*)context);
-            OBJ_RELEASE(context->con);
             OBJ_RELEASE(context->con->inbuf_list);
             OBJ_RELEASE(context->con->context_list);
             free(context->con->sendbuf);
+            OBJ_RELEASE(context->con);
+            OBJ_RELEASE(context->con);
+            opal_free_list_return(temp, (opal_free_list_item_t*)context);
             OPAL_THREAD_LOCK(&ompi_request_lock);
             ompi_request_complete(temp_req, 1);
             OPAL_THREAD_UNLOCK(&ompi_request_lock);
@@ -334,11 +343,12 @@ static int recv_cb(ompi_request_t *req){
             opal_free_list_return(temp, (opal_free_list_item_t*)context);
         }
     }
-    return MPI_SUCCESS;
+    req->req_free(&req);
+    return 1;
 }
 
 int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    //printf("In adapt allreduce_intra_recursivedoubling\n");
+    TEST("In adapt allreduce_intra_recursivedoubling\n");
     ptrdiff_t extent, lower_bound, true_lower_bound, true_extent;
     int size, rank, adjsize, extra_ranks;
     char *accumbuf = NULL;
@@ -423,6 +433,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
     con->adjsize = adjsize;
     con->sendbuf_ready = 0;     //use to decide if sendbuf is ready for reuse
     con->inbuf_ready = 0;     //use to decide if inbuf has the data already
+    con->last_send = 0;         //to tell if the send is last send for non power of 2 nodes
     
     /* Handle non-power-of-two case:
      - Even ranks less than 2 * extra_ranks send their data to (rank + 1), and
@@ -436,7 +447,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
      */
     if (rank <  (2 * extra_ranks)) {
         if (0 == (rank % 2)) {
-            //printf("[%d]: Case 1\n", rank);
+            TEST("[%d]: Case 1\n", rank);
             int newrank = -1;
             //send to rank+1
             mca_coll_adapt_allreduce_context_t * send_context = (mca_coll_adapt_allreduce_context_t *) opal_free_list_wait(context_list);
@@ -449,7 +460,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
             
             //create a send request
             ompi_request_t *send_req;
-            //printf("[%d]: Send(start in main): distance %d to %d\n", ompi_comm_rank(send_context->con->comm), send_context->distance, send_context->peer);
+            TEST("[%d]: Send(start in main): distance %d to %d\n", ompi_comm_rank(send_context->con->comm), send_context->distance, send_context->peer);
             err = MCA_PML_CALL(isend(con->sendbuf, count, dtype, send_context->peer, send_context->distance, MCA_PML_BASE_SEND_SYNCHRONOUS, comm, &send_req));
             if (MPI_SUCCESS != err) {
                 return err;
@@ -470,7 +481,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
             OBJ_RETAIN(con);
             //create a recv request
             ompi_request_t *recv_req;
-            //printf("[%d]: Recv(start in main): distance %d from %d\n", ompi_comm_rank(recv_context->con->comm), recv_context->distance, recv_context->peer);
+            TEST("[%d]: Recv(start in main): distance %d from %d\n", ompi_comm_rank(recv_context->con->comm), recv_context->distance, recv_context->peer);
             err = MCA_PML_CALL(irecv(con->recvbuf, count, dtype, recv_context->peer, recv_context->distance, comm, &recv_req));
             if (MPI_SUCCESS != err) {
                 return err;
@@ -481,7 +492,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
             }
         }
         else {
-            //printf("[%d]: Case 2\n", rank);
+            TEST("[%d]: Case 2\n", rank);
             int newrank = rank>>1;
             //recv from rank-1
             mca_coll_adapt_inbuf_t * inbuf = (mca_coll_adapt_inbuf_t *) opal_free_list_wait(inbuf_list);
@@ -496,7 +507,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
             opal_atomic_add_32(&(recv_context->con->sendbuf_ready), 1);
             //create a recv request
             ompi_request_t *recv_req;
-            //printf("[%d]: Recv(start in main): distance %d from %d\n", ompi_comm_rank(recv_context->con->comm), recv_context->distance, recv_context->peer);
+            TEST("[%d]: Recv(start in main): distance %d from %d\n", ompi_comm_rank(recv_context->con->comm), recv_context->distance, recv_context->peer);
             err = MCA_PML_CALL(irecv(inbuf->buff-lower_bound, count, dtype, recv_context->peer, recv_context->distance, comm, &recv_req));
             if (MPI_SUCCESS != err) {
                 return err;
@@ -508,7 +519,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
         }
     }
     else {
-        //printf("[%d]: Case 3\n", rank);
+        TEST("[%d]: Case 3\n", rank);
         int newrank = rank-extra_ranks;
         int newremote;
         int remote;
@@ -526,7 +537,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
         OBJ_RETAIN(con);
         //create a recv request
         ompi_request_t *recv_req;
-        //printf("[%d]: Recv(start in main): distance %d from %d\n", ompi_comm_rank(recv_context->con->comm), recv_context->distance, recv_context->peer);
+        TEST("[%d]: Recv(start in main): distance %d from %d\n", ompi_comm_rank(recv_context->con->comm), recv_context->distance, recv_context->peer);
         err = MCA_PML_CALL(irecv(inbuf->buff-lower_bound, count, dtype, recv_context->peer, recv_context->distance, comm, &recv_req));
         if (MPI_SUCCESS != err) {
             return err;
@@ -547,7 +558,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
         
         //create a send request
         ompi_request_t *send_req;
-        //printf("[%d]: Send(start in main): distance %d to %d\n", ompi_comm_rank(send_context->con->comm), send_context->distance, send_context->peer);
+        TEST("[%d]: Send(start in main): distance %d to %d\n", ompi_comm_rank(send_context->con->comm), send_context->distance, send_context->peer);
         err = MCA_PML_CALL(isend(con->sendbuf, count, dtype, send_context->peer, send_context->distance, MCA_PML_BASE_SEND_SYNCHRONOUS, comm, &send_req));
         if (MPI_SUCCESS != err) {
             return err;

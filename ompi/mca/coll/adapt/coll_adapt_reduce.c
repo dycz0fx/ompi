@@ -136,7 +136,8 @@ static int send_cb(ompi_request_t *req){
         TEST("return context_list\n");
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
     }
-    return MPI_SUCCESS;
+    req->req_free(&req);
+    return 1;
 }
 
 static int recv_cb(ompi_request_t *req){
@@ -271,8 +272,8 @@ static int recv_cb(ompi_request_t *req){
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
         
     }
-    
-    return MPI_SUCCESS;
+    req->req_free(&req);
+    return 1;
 }
 
 int mca_coll_adapt_reduce(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){

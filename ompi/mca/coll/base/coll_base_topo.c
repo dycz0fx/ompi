@@ -942,7 +942,7 @@ ompi_coll_base_topo_build_two_trees_binomial(struct ompi_communicator_t* comm,
 ompi_coll_tree_t**
 ompi_coll_base_topo_build_two_chains(struct ompi_communicator_t* comm,
                                      int root ){
-    int i, j, rank, size, vrank;
+    int i, rank, size, vrank;
     ompi_coll_tree_t** two_trees;
     //build the two tree array
     two_trees = (ompi_coll_tree_t **)malloc(2 * sizeof(ompi_coll_tree_t *));
@@ -958,7 +958,7 @@ ompi_coll_base_topo_build_two_chains(struct ompi_communicator_t* comm,
     rank = ompi_comm_rank(comm);
     vrank = (rank-root+size-1)%size;    //root has the highest vrank
     //printf("rank = %d, vrank = %d\n", rank, vrank);
-    int recovered_rank = (vrank+1+root)%size;      //only for test
+    //int recovered_rank = (vrank+1+root)%size;      //only for test
     //printf("rank = %d, recovered_rank = %d\n", rank, recovered_rank);   //for test
     int p = size-1;       //number of node in the two tree, exclude the root
     
