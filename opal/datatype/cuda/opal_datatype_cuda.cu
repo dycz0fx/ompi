@@ -742,3 +742,10 @@ int32_t opal_recude_op_sum_double(void *source, void *target, int count, void *c
 #endif
     return 1;
 }
+
+void *opal_ddt_cuda_malloc_host(size_t size)
+{
+    void *ptr;
+    cudaMallocHost((void **)&ptr, size);
+    return ptr;
+}

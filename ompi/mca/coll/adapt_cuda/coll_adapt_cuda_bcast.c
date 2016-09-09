@@ -11,6 +11,7 @@
 #include "opal/util/bit_ops.h"
 #include "opal/sys/atomic.h"                //atomic
 #include "ompi/mca/pml/ob1/pml_ob1.h"       //dump
+#include "opal/datatype/opal_datatype_cuda.h"
 
 #define SEND_NUM 2    //send how many fragments at once
 #define RECV_NUM 3    //receive how many fragments at once
@@ -24,12 +25,23 @@ static void printfno(){
     
 }
 
+char *cpu_buff_heap = NULL;
+
+#define TIMER_DATA_TYPE struct timeval
+#define GET_TIME(TV)   gettimeofday( &(TV), NULL )
+#define ELAPSED_TIME(TSTART, TEND)  (((TEND).tv_sec - (TSTART).tv_sec) * 1000000 + ((TEND).tv_usec - (TSTART).tv_usec))
+
+
 //send call back
 static int send_cb(ompi_request_t *req)
 {
     req->req_complete_cb_called = 1;
     
     mca_coll_adapt_cuda_bcast_context_t *context = (mca_coll_adapt_cuda_bcast_context_t *) req->req_complete_cb_data;
+    
+    ompi_coll_tree_t *tree = context->con->tree;
+    
+    char *send_buff = NULL;
     
     int err;
     
@@ -49,13 +61,27 @@ static int send_cb(ompi_request_t *req)
         send_context->peer = context->peer;
         send_context->con = context->con;
         OBJ_RETAIN(context->con);
+        
         int send_count = send_context->con->seg_count;
         if (new_id == (send_context->con->num_segs - 1)) {
             send_count = send_context->con->count - new_id * send_context->con->seg_count;
         }
+        
+        if (tree->topo_flags == 0 && tree->tree_next_topo_flags[context->child_id] != 2) {
+            assert(context->con->cpu_buff_list != NULL);
+            if (context->con->cpu_buff_memcpy_flags[new_id] == CPU_BUFFER_MEMCPY_NOT_DONE) {
+            //    ompi_datatype_copy_content_same_ddt(send_context->con->datatype, send_count, context->con->cpu_buff_list + new_id * context->con->real_seg_size, (char*)send_context->buff);
+                opal_cuda_memcpy_sync(context->con->cpu_buff_list + new_id * context->con->real_seg_size, (char*)send_context->buff, send_count);
+                context->con->cpu_buff_memcpy_flags[new_id] = CPU_BUFFER_MEMCPY_DONE;
+            }
+            send_buff = context->con->cpu_buff_list + new_id * context->con->real_seg_size;
+        } else {
+            send_buff = send_context->buff;
+        }
+
         ++(send_context->con->send_array[send_context->child_id]);
         TEST("[%d]: Send(start in send cb): segment %d to %d at buff %p send_count %d dataype %p\n", ompi_comm_rank(send_context->con->comm), send_context->frag_id, send_context->peer, (void *)send_context->buff, send_count, (void *)send_context->con->datatype);
-        err = MCA_PML_CALL(isend(send_context->buff, send_count, send_context->con->datatype, send_context->peer, new_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
+        err = MCA_PML_CALL(isend(send_buff, send_count, send_context->con->datatype, send_context->peer, new_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
         //invoke send call back
         if(!ompi_request_set_callback(send_req, send_cb, send_context)) {
             opal_mutex_unlock (context->con->mutex);
@@ -182,7 +208,8 @@ static int recv_cb(ompi_request_t *req){
 
 int mca_coll_adapt_cuda_bcast(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     printf("cuda pipeline\n");
-    return mca_coll_adapt_cuda_bcast_pipeline(buff, count, datatype, root, comm, module);
+    //return mca_coll_adapt_cuda_bcast_pipeline(buff, count, datatype, root, comm, module);
+    return mca_coll_adapt_cuda_bcast_topoaware_chain(buff, count, datatype, root, comm, module);
 }
 
 
@@ -366,8 +393,19 @@ int mca_coll_adapt_cuda_bcast_two_chains(void *buff, int count, struct ompi_data
     }
 }
 
+static int print_topo_level(int rank, ompi_coll_tree_t* tree)
+{
+    printf("rank %d, topo_level %d, parent %d, ", rank, tree->topo_flags, tree->tree_prev_topo_flags);
+    int i;
+    for (i=0; i<tree->tree_nextsize; i++) {
+        printf("child %d, ", tree->tree_next_topo_flags[i]);
+    }
+    printf("\n");
+    return 0;
+}
+
 int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t* tree){
-    int i, j;       //temp variable for iteration
+    int i, j, k;       //temp variable for iteration
     int size;       //size of the communicator
     int rank;       //rank of this node
     int err;        //record return value
@@ -384,6 +422,9 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
     opal_mutex_t * mutex;
     int *recv_array = NULL;   //store those segments which are received
     int *send_array = NULL;   //record how many isend has been issued for every child
+    
+    char *cpu_buff_list = NULL;  // used to send/receive data into cpu mem, only used for node leader
+    char *send_buff = NULL;
     
     //set up free list
     context_list = OBJ_NEW(opal_free_list_t);
@@ -449,12 +490,16 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
     con->send_array = send_array;
     con->num_sent_segs = 0;
     con->tree = tree;
+    con->cpu_buff_list = NULL;
+    con->cpu_buff_memcpy_flags = NULL;
     
     TEST("[%d, %" PRIx64 "]: Bcast, root %d\n", rank, gettid(), root);
     TEST("[%d, %" PRIx64 "]: con->mutex = %p, num_children = %d\n", rank, gettid(), (void *)con->mutex, tree->tree_nextsize);
     //if root, send segment to every children.
     
     opal_mutex_lock(mutex);
+    
+    print_topo_level(rank, tree);
     
     if (rank == root){
         //handle the situation when num_segs < SEND_NUM
@@ -489,6 +534,36 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
                 context->peer = tree->tree_next[j];   //the actural rank of the peer
                 context->con = con;
                 OBJ_RETAIN(con);
+                
+                if (tree->tree_next_topo_flags[j] != 2) {
+                    if (cpu_buff_heap == NULL) {
+                        //cpu_buff_heap = (char *)malloc(sizeof(char)* real_seg_size * num_segs);
+                        cpu_buff_heap = (char*)opal_cuda_malloc_host(sizeof(char)* real_seg_size * num_segs);
+                        con->cpu_buff_list = cpu_buff_heap;
+                    }
+                    if (con->cpu_buff_memcpy_flags == NULL) {
+                        con->cpu_buff_list = cpu_buff_heap;
+                        con->cpu_buff_memcpy_flags = (int *)malloc(sizeof(int) * num_segs);
+                        for (k = 0; k < num_segs; k++) {
+                            con->cpu_buff_memcpy_flags[k] = CPU_BUFFER_MEMCPY_NOT_DONE;
+                        }
+                    }
+                    if (con->cpu_buff_memcpy_flags[i] == CPU_BUFFER_MEMCPY_NOT_DONE) {
+                       // ompi_datatype_copy_content_same_ddt(datatype, send_count, (char*)cpu_buff_list + i * real_seg_size, (char*)context->buff);
+                        TIMER_DATA_TYPE tstart, tend;
+                        long total_time;
+                        GET_TIME(tstart);
+                        opal_cuda_memcpy_sync(con->cpu_buff_list + i * real_seg_size, (char*)context->buff, send_count);
+                        GET_TIME( tend );
+                        total_time = ELAPSED_TIME( tstart, tend );
+                        printf("memcpy %ld us\n", total_time);
+                        con->cpu_buff_memcpy_flags[i] = CPU_BUFFER_MEMCPY_DONE;
+                    }
+                    send_buff = (char*)cpu_buff_list + i * real_seg_size;
+                } else {
+                    send_buff = context->buff;
+                }
+                
                 TEST("[%d, %" PRIx64 "]: Send(start in main): segment %d to %d at buff %p send_count %d datatype %p\n", rank, gettid(), context->frag_id, context->peer, (void *)context->buff, send_count, (void *)datatype);
                 err = MCA_PML_CALL(isend(context->buff, send_count, datatype, context->peer, i, MCA_PML_BASE_SEND_SYNCHRONOUS, comm, &send_req));
                 
@@ -574,6 +649,12 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
     }
     if (con->num_segs !=0) {
         free(con->recv_array);
+    }
+    if (cpu_buff_list != NULL) {
+        free(cpu_buff_list);
+    }
+    if (con->cpu_buff_memcpy_flags != NULL) {
+        free(con->cpu_buff_memcpy_flags);
     }
     OBJ_RELEASE(con->mutex);
     OBJ_RELEASE(con);

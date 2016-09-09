@@ -757,16 +757,16 @@ int mca_coll_adapt_cuda_reduce_chain_pipeline(const void *sbuf, void *rbuf, int 
         //set accumbuf
         accumbuf = (char **) malloc (sizeof(char*) * num_segs);
         if (root == rank){
-            if (sbuf != MPI_IN_PLACE) {
-                TIMER_DATA_TYPE tstart, tend;
-                long total_time;
-                GET_TIME(tstart);
-                ompi_datatype_copy_content_same_ddt(dtype, count, (char*)rbuf, (char*)sbuf);
-                GET_TIME( tend );
-                total_time = ELAPSED_TIME( tstart, tend );
-                printf("memcpy %ld us", total_time);
-
-            }
+            // if (sbuf != MPI_IN_PLACE) {
+            //     TIMER_DATA_TYPE tstart, tend;
+            //     long total_time;
+            //     GET_TIME(tstart);
+            //     ompi_datatype_copy_content_same_ddt(dtype, count, (char*)rbuf, (char*)sbuf);
+            //     GET_TIME( tend );
+            //     total_time = ELAPSED_TIME( tstart, tend );
+            //     printf("memcpy %ld us", total_time);
+            //
+            // }
             for (i=0; i<num_segs; i++) {
                 accumbuf[i] = (char *)rbuf + (ptrdiff_t)i * (ptrdiff_t)segment_increment;
             }

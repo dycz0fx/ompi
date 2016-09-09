@@ -32,6 +32,9 @@ typedef struct ompi_coll_tree_t {
     int32_t tree_prev;
     int32_t tree_next[MAXTREEFANOUT];
     int32_t tree_nextsize;
+    int32_t topo_flags;
+    int32_t tree_prev_topo_flags;
+    int32_t tree_next_topo_flags[MAXTREEFANOUT];
 } ompi_coll_tree_t;
 
 ompi_coll_tree_t*
@@ -88,14 +91,14 @@ typedef struct ompi_coll_topo_helper_t {
 
 //void probe_topo(struct ompi_communicator_t* comm);
 void sort_topo(int *topo, int start, int end, int size, int *ranks_a, int level);
-void set_helper(ompi_coll_topo_helper_t *helper, int *ranks_a, int *ranks_s, int *topo, int root, int size);
+void set_helper(ompi_coll_topo_helper_t *helper, int32_t *rank_topo_array, int *ranks_a, int *ranks_s, int *topo, int root, int size);
 void free_helper(ompi_coll_topo_helper_t *helper);
 void print_helper(ompi_coll_topo_helper_t *helper);
 
 int to_vrank(int rank, int *ranks, int size);
 int to_rank(int vrank, int *ranks, int size);
 void move_group_forward(int *ranks, int size, int start, int end);
-void build_topoaware_chain(int count, int *start_loc, int rank, int rank_loc, int size, ompi_coll_tree_t *tree, int *ranks_a, int *ranks_s);
+void build_topoaware_chain(int count, int *start_loc, int rank, int rank_loc, int size, ompi_coll_tree_t *tree, int *ranks_a, int *ranks_s, int32_t *rank_topo_array);
 void build_topoaware_linear(int count, int *start_loc, int rank, int rank_loc, int size, ompi_coll_tree_t *tree, int *ranks_a, int *ranks_s);
 
 END_C_DECLS

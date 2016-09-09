@@ -1135,6 +1135,51 @@ void get_topo(int *topo, struct ompi_communicator_t* comm){
 
 }
 
+void get_topo_gpu(int *topo, struct ompi_communicator_t* comm){
+    int r_rank, i, my_rank;
+    int size = ompi_comm_size(comm);
+    ompi_proc_t* proc;
+    int * self_topo = (int *)malloc(sizeof(int) * TOPO_LEVEL);
+    int * same_numa = (int *)malloc(sizeof(int) * size);
+    for (i=0; i<size; i++) {
+        same_numa[i] = size;
+    }
+    int same_numa_count = 0;
+    //set daemon vpid
+    self_topo[0] = OMPI_RTE_MY_NODEID;
+    //set numa id
+    for (r_rank=0; r_rank < size; r_rank++) {
+        proc = ompi_group_peer_lookup(comm->c_local_group, r_rank);
+        if (OPAL_PROC_ON_LOCAL_NUMA(proc->super.proc_flags)) {
+            same_numa[same_numa_count] = r_rank;
+            same_numa_count++;
+        }
+    }
+    int min = size;
+    for (i=0; i<same_numa_count; i++) {
+        if (same_numa[i] < min) {
+            min = same_numa[i];
+        }
+    }
+    
+    my_rank = ompi_comm_rank(comm);
+    if (my_rank > 3) {
+        self_topo[1] = 4;    
+    } else {
+        self_topo[1] = min;
+    }
+
+    //set core id
+    self_topo[2] = my_rank;
+    
+    printf("[topo %d]: %d %d %d\n", ompi_comm_rank(comm), self_topo[0], self_topo[1], self_topo[2]);
+
+    //do allgather
+    comm->c_coll.coll_allgather(self_topo, TOPO_LEVEL, MPI_INT, topo, TOPO_LEVEL, MPI_INT, comm, comm->c_coll.coll_allgather_module);
+    free(same_numa);
+    free(self_topo);
+}
+
 //convert rank to shift rank, shift rank to viritual rank
 int to_vrank(int rank, int *ranks, int size){
     int i;
@@ -1234,7 +1279,7 @@ void sort_topo(int *topo, int start, int end, int size, int *ranks_a, int level)
 }
 
 //get the starting point of each gourp on every level
-void set_helper(ompi_coll_topo_helper_t *helper, int *ranks_a, int *ranks_s, int *topo, int root, int size){
+void set_helper(ompi_coll_topo_helper_t *helper, int32_t *rank_topo_array, int *ranks_a, int *ranks_s, int *topo, int root, int size){
     int i, j;
     //sort the topo such that each group is contiguous
     sort_topo(topo, 0, size-1, size, ranks_a, 0);
@@ -1252,8 +1297,13 @@ void set_helper(ompi_coll_topo_helper_t *helper, int *ranks_a, int *ranks_s, int
 //        printf("%d ", ranks_a[i]);
 //    }
 //    printf("\n");
+    
+    for (i = 0; i < size; i ++) {
+        rank_topo_array[i] = TOPO_LEVEL-1;
+    }
 
     int count = 0;
+    int rank;
     int *temp = (int *)malloc(sizeof(int)*size);
     for (i=0; i<TOPO_LEVEL; i++) {
         count = 0;
@@ -1272,6 +1322,10 @@ void set_helper(ompi_coll_topo_helper_t *helper, int *ranks_a, int *ranks_s, int
         }
         for (j=0; j<count; j++) {
             helper[i].start_loc[j] = temp[j];
+            rank = to_rank(helper[i].start_loc[j], ranks_a, size);
+            if (rank_topo_array[rank] > i) {
+                rank_topo_array[rank] = i;
+            }
         }
         //if there are more than one group in this level
         if (count > 1) {
@@ -1395,7 +1449,8 @@ ompi_coll_base_topo_build_topoaware_linear(struct ompi_communicator_t* comm, int
         ranks_s[i] = i;
     }
     ompi_coll_topo_helper_t *helper = (ompi_coll_topo_helper_t *) malloc(sizeof(ompi_coll_topo_helper_t)*TOPO_LEVEL);
-    set_helper(helper, ranks_a, ranks_s, topo, root, size);
+    int32_t *rank_topo_array = (int32_t *)malloc(sizeof(int32_t) * size);
+    set_helper(helper, rank_topo_array, ranks_a, ranks_s, topo, root, size);
     //print_helper(helper);
     
     int vrank = to_vrank(to_vrank(rank, ranks_a, size), ranks_s, size);
@@ -1460,6 +1515,7 @@ ompi_coll_base_topo_build_topoaware_linear(struct ompi_communicator_t* comm, int
     free_helper(helper);
     free(ranks_a);
     free(ranks_s);
+    free(rank_topo_array);
     
     return tree;
 }
@@ -1497,7 +1553,7 @@ ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int 
             free(coll_comm->cached_topo);
         }
         topo = (int *)malloc(sizeof(int)*size*TOPO_LEVEL);
-        get_topo(topo, comm);
+        get_topo_gpu(topo, comm);
         coll_comm->cached_topo = topo;
         coll_comm->cached_old_comm = comm;
     }
@@ -1513,8 +1569,14 @@ ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int 
         ranks_s[i] = i;
     }
     ompi_coll_topo_helper_t *helper = (ompi_coll_topo_helper_t *) malloc(sizeof(ompi_coll_topo_helper_t)*TOPO_LEVEL);
-    set_helper(helper, ranks_a, ranks_s, topo, root, size);
+    int32_t *rank_topo_array = (int32_t *)malloc(sizeof(int32_t) * size);
+    set_helper(helper, rank_topo_array, ranks_a, ranks_s, topo, root, size);
     //print_helper(helper);
+    printf("\n");
+    for (i = 0; i < size; i++) {
+        printf("%d ,", rank_topo_array[i]);
+    }
+    printf("\n");
     
     int vrank = to_vrank(to_vrank(rank, ranks_a, size), ranks_s, size);
     
@@ -1523,6 +1585,8 @@ ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int 
     int new_head = -1;
     int new_tail = -1;
     int rank_loc = -1;
+    
+    tree->topo_flags = rank_topo_array[rank];
     
     for (i=0; i<TOPO_LEVEL; i++) {
         //count how many groups on this level between head and tail
@@ -1572,7 +1636,8 @@ ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int 
         //printf("exist %d, count = %d\n", exist, count);
         //if rank is one of the group heads
         if (exist) {
-            build_topoaware_chain(count, temp_start_loc, rank, rank_loc, size, tree, ranks_a, ranks_s);
+         //   printf("level %d, rank %d\n", i, rank);
+            build_topoaware_chain(count, temp_start_loc, rank, rank_loc, size, tree, ranks_a, ranks_s, rank_topo_array);
         }
         
         free(temp_start_loc);
@@ -1581,13 +1646,14 @@ ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int 
     free_helper(helper);
     free(ranks_a);
     free(ranks_s);
+    free(rank_topo_array);
     
     return tree;
 }
 
 
 
-void build_topoaware_chain(int count, int *start_loc, int rank, int rank_loc, int size, ompi_coll_tree_t *tree, int *ranks_a, int *ranks_s){
+void build_topoaware_chain(int count, int *start_loc, int rank, int rank_loc, int size, ompi_coll_tree_t *tree, int *ranks_a, int *ranks_s, int32_t *rank_topo_array){
     //printf("build_topo_chain, count = %d, rank = %d, rank_loc=%d\n", count, rank, rank_loc);
     if (count == 1) {
         return;
@@ -1595,18 +1661,22 @@ void build_topoaware_chain(int count, int *start_loc, int rank, int rank_loc, in
     else {
         if (rank_loc == 0) {
             tree->tree_next[tree->tree_nextsize] = to_rank(to_rank(start_loc[rank_loc+1], ranks_s, size), ranks_a, size);
+            tree->tree_next_topo_flags[tree->tree_nextsize] = rank_topo_array[tree->tree_next[tree->tree_nextsize]];
             tree->tree_nextsize+=1;
             //printf("[rank %d]: set next %d\n", rank, tree->tree_next[tree->tree_nextsize-1]);
         }
         else if (rank_loc == count - 1) {
             tree->tree_prev = to_rank(to_rank(start_loc[rank_loc-1], ranks_s, size), ranks_a, size);
+            tree->tree_prev_topo_flags = rank_topo_array[tree->tree_prev];
             //printf("[rank %d]: set prev %d\n", rank, tree->tree_prev);
         }
         else {
             tree->tree_next[tree->tree_nextsize] = to_rank(to_rank(start_loc[rank_loc+1], ranks_s, size), ranks_a, size);
+            tree->tree_next_topo_flags[tree->tree_nextsize] = rank_topo_array[tree->tree_next[tree->tree_nextsize]];
             tree->tree_nextsize+=1;
             //printf("[rank %d]: set next %d\n", rank, tree->tree_next[tree->tree_nextsize-1]);
             tree->tree_prev = to_rank(to_rank(start_loc[rank_loc-1], ranks_s, size), ranks_a, size);
+            tree->tree_prev_topo_flags = rank_topo_array[tree->tree_prev];
             //printf("[rank %d]: set prev %d\n", rank, tree->tree_prev);
         }
     }

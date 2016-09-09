@@ -7,6 +7,9 @@
 #include "ompi/mca/coll/base/coll_base_topo.h"  //ompi_coll_tree_t
 #include "coll_adapt_cuda_inbuf.h"
 
+#define CPU_BUFFER_MEMCPY_DONE  1
+#define CPU_BUFFER_MEMCPY_NOT_DONE  0
+
 /* bcast constant context in bcast context */
 struct mca_coll_adapt_cuda_constant_bcast_context_s {
     opal_object_t  super;
@@ -24,6 +27,8 @@ struct mca_coll_adapt_cuda_constant_bcast_context_s {
     int num_recv_segs; //store the length of the fragment array, how many fragments are recevied
     int num_sent_segs;  //number of sent segments
     ompi_coll_tree_t * tree;
+    char *cpu_buff_list;
+    int *cpu_buff_memcpy_flags;
 };
 
 typedef struct mca_coll_adapt_cuda_constant_bcast_context_s mca_coll_adapt_cuda_constant_bcast_context_t;

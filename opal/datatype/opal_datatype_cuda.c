@@ -19,6 +19,7 @@
 #include "opal/datatype/opal_convertor.h"
 #include "opal/datatype/opal_datatype_cuda.h"
 #include "opal/mca/installdirs/installdirs.h"
+#include "opal/mca/timer/base/base.h"
 
 static bool initialized = false;
 int opal_cuda_verbose = 0;
@@ -119,7 +120,12 @@ void *opal_cuda_memcpy(void *dest, const void *src, size_t size, opal_convertor_
     int res;
 
     if (!(convertor->flags & CONVERTOR_CUDA)) {
-        return memcpy(dest, src, size);
+        opal_timer_t ts_start, ts_end;
+        ts_start = opal_timer_base_get_usec();
+        memcpy(dest, src, size);
+        ts_end = opal_timer_base_get_usec();
+        opal_output(0, "CPU memcpy took %7.2f usecs, size %ld, BW %fMB/s\n", (float)(ts_end - ts_start), size, size/1024.0/1024.0/(float)(ts_end-ts_start)*1E6);
+        return dest;
     }
 
     if (convertor->flags & CONVERTOR_CUDA_ASYNC) {
@@ -255,6 +261,7 @@ int32_t opal_cuda_kernel_support_init(void)
         OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_ddt_cuda_event_sync );
         OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_ddt_cuda_event_record );
         OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_recude_op_sum_double );
+        OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_ddt_cuda_malloc_host );
         
         if (OPAL_SUCCESS != cuda_kernel_table.opal_ddt_cuda_kernel_init_p()) {
             return OPAL_ERROR;
@@ -294,6 +301,7 @@ int32_t opal_cuda_kernel_support_fini(void)
         cuda_kernel_table.opal_ddt_cuda_event_sync_p = NULL;
         cuda_kernel_table.opal_ddt_cuda_event_record_p = NULL;
         cuda_kernel_table.opal_recude_op_sum_double_p = NULL;
+        cuda_kernel_table.opal_ddt_cuda_malloc_host_p = NULL;
 
         dlclose(opal_datatype_cuda_kernel_handle);
         opal_datatype_cuda_kernel_handle = NULL;
@@ -523,5 +531,15 @@ int32_t opal_cuda_recude_op_sum_double(void *source, void *target, int count, vo
     } else {
         opal_output(0, "opal_recude_op_sum_double function pointer is NULL\n");
         return -2;
+    }
+}
+
+void* opal_cuda_malloc_host(size_t size)
+{
+    if (cuda_kernel_table.opal_ddt_cuda_malloc_host_p != NULL) {
+        return cuda_kernel_table.opal_ddt_cuda_malloc_host_p(size);
+    } else {
+        opal_output(0, "opal_ddt_cuda_malloc_host function pointer is NULL\n");
+        return NULL;
     }
 }
