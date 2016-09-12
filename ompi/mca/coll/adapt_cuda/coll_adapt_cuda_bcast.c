@@ -56,6 +56,7 @@ static int send_cb(ompi_request_t *req)
         int new_id = context->con->recv_array[sent_id];
         mca_coll_adapt_cuda_bcast_context_t * send_context = (mca_coll_adapt_cuda_bcast_context_t *) opal_free_list_wait(context->con->context_list);
         send_context->buff = context->buff + (new_id - context->frag_id) * context->con->real_seg_size;
+        send_context->buff_tmp = NULL;
         send_context->frag_id = new_id;
         send_context->child_id = context->child_id;
         send_context->peer = context->peer;
@@ -71,6 +72,7 @@ static int send_cb(ompi_request_t *req)
             assert(context->con->cpu_buff_list != NULL);
             if (context->con->cpu_buff_memcpy_flags[new_id] == CPU_BUFFER_MEMCPY_NOT_DONE) {
             //    ompi_datatype_copy_content_same_ddt(send_context->con->datatype, send_count, context->con->cpu_buff_list + new_id * context->con->real_seg_size, (char*)send_context->buff);
+                opal_output(0, "sendcb memcpy\n");
                 opal_cuda_memcpy_sync(context->con->cpu_buff_list + new_id * context->con->real_seg_size, (char*)send_context->buff, send_count);
                 context->con->cpu_buff_memcpy_flags[new_id] = CPU_BUFFER_MEMCPY_DONE;
             }
@@ -119,7 +121,11 @@ static int recv_cb(ompi_request_t *req){
     //get necessary info from request
     mca_coll_adapt_cuda_bcast_context_t *context = (mca_coll_adapt_cuda_bcast_context_t *) req->req_complete_cb_data;
     
+    ompi_coll_tree_t *tree = context->con->tree;
+    
     int err, i;
+    char *send_buff = NULL;
+    char *recv_buff = NULL;
     
     TEST("[%d, %" PRIx64 "]: Recv(cb): segment %d from %d at buff %p\n", ompi_comm_rank(context->con->comm), gettid(), context->frag_id, context->peer, (void *)context->buff);
     
@@ -135,6 +141,7 @@ static int recv_cb(ompi_request_t *req){
         //get new context item from free list
         mca_coll_adapt_cuda_bcast_context_t * recv_context = (mca_coll_adapt_cuda_bcast_context_t *) opal_free_list_wait(context->con->context_list);
         recv_context->buff = context->buff + (new_id - context->frag_id) * context->con->real_seg_size;
+        recv_context->buff_tmp = NULL;
         recv_context->frag_id = new_id;
         recv_context->child_id = context->child_id;
         recv_context->peer = context->peer;
@@ -144,8 +151,15 @@ static int recv_cb(ompi_request_t *req){
         if (new_id == (recv_context->con->num_segs - 1)) {
             recv_count = recv_context->con->count - new_id * recv_context->con->seg_count;
         }
+        if ((tree->topo_flags == 1 && tree->tree_prev_topo_flags == 0) || (tree->topo_flags == 0 && tree->tree_prev_topo_flags == 0)) {
+            opal_output(0, "recv cb change recv_buff\n");
+            recv_buff = context->con->cpu_buff_list + new_id * context->con->real_seg_size;
+            recv_context->buff_tmp = recv_buff;
+        } else {
+            recv_buff = recv_context->buff;
+        }
         TEST("[%d]: Recv(start in recv cb): segment %d from %d at buff %p recv_count %d datatype %p\n", ompi_comm_rank(context->con->comm), context->frag_id, context->peer, (void *)context->buff, recv_count, (void *)recv_context->con->datatype);
-        MCA_PML_CALL(irecv(recv_context->buff, recv_count, recv_context->con->datatype, recv_context->peer, recv_context->frag_id, recv_context->con->comm, &recv_req));
+        MCA_PML_CALL(irecv(recv_buff, recv_count, recv_context->con->datatype, recv_context->peer, recv_context->frag_id, recv_context->con->comm, &recv_req));
         //invoke recvive call back
         if(!ompi_request_set_callback(recv_req, recv_cb, recv_context)) {
             opal_mutex_unlock (context->con->mutex);
@@ -165,12 +179,17 @@ static int recv_cb(ompi_request_t *req){
             }
             mca_coll_adapt_cuda_bcast_context_t * send_context = (mca_coll_adapt_cuda_bcast_context_t *) opal_free_list_wait(context->con->context_list);
             send_context->buff = context->buff;
+            send_context->buff_tmp = NULL;
             send_context->frag_id = context->frag_id;
             send_context->child_id = i;
             send_context->peer = context->con->tree->tree_next[i];
             send_context->con = context->con;
             OBJ_RETAIN(context->con);
             ++(send_context->con->send_array[i]);
+            if ((tree->topo_flags == 1 && tree->tree_prev_topo_flags == 0) || (tree->topo_flags == 0 && tree->tree_prev_topo_flags == 0)) {
+                opal_output(0, "recv cb memcpy\n");
+                opal_cuda_memcpy_sync(send_context->buff, context->buff_tmp, send_count);
+            }
             TEST("[%d]: Send(start in recv cb): segment %d to %d at buff %p send_count %d datatype %p comm %p\n", ompi_comm_rank(send_context->con->comm), send_context->frag_id, send_context->peer, (void *)send_context->buff, send_count, (void *) send_context->con->datatype, (void *) send_context->con->comm);
             err = MCA_PML_CALL(isend(send_context->buff, send_count, send_context->con->datatype, send_context->peer, send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
             
@@ -425,6 +444,7 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
     
     char *cpu_buff_list = NULL;  // used to send/receive data into cpu mem, only used for node leader
     char *send_buff = NULL;
+    char *recv_buff = NULL;
     
     //set up free list
     context_list = OBJ_NEW(opal_free_list_t);
@@ -529,6 +549,7 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
             for (j=0; j<tree->tree_nextsize; j++) {
                 mca_coll_adapt_cuda_bcast_context_t * context = (mca_coll_adapt_cuda_bcast_context_t *) opal_free_list_wait(context_list);
                 context->buff = (char *)buff + i * real_seg_size;
+                context->buff_tmp = NULL;
                 context->frag_id = i;
                 context->child_id = j;              //the id of peer in in tree->tree_next
                 context->peer = tree->tree_next[j];   //the actural rank of the peer
@@ -538,6 +559,7 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
                 if (tree->tree_next_topo_flags[j] != 2) {
                     if (cpu_buff_heap == NULL) {
                         //cpu_buff_heap = (char *)malloc(sizeof(char)* real_seg_size * num_segs);
+                        opal_output(0, "malloc heap send\n");
                         cpu_buff_heap = (char*)opal_cuda_malloc_host(sizeof(char)* real_seg_size * num_segs);
                         con->cpu_buff_list = cpu_buff_heap;
                     }
@@ -553,19 +575,20 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
                         TIMER_DATA_TYPE tstart, tend;
                         long total_time;
                         GET_TIME(tstart);
+                        opal_output(0, "send root memcpy\n");
                         opal_cuda_memcpy_sync(con->cpu_buff_list + i * real_seg_size, (char*)context->buff, send_count);
                         GET_TIME( tend );
                         total_time = ELAPSED_TIME( tstart, tend );
                         printf("memcpy %ld us\n", total_time);
                         con->cpu_buff_memcpy_flags[i] = CPU_BUFFER_MEMCPY_DONE;
                     }
-                    send_buff = (char*)cpu_buff_list + i * real_seg_size;
+                    send_buff = con->cpu_buff_list + i * real_seg_size;
                 } else {
                     send_buff = context->buff;
                 }
                 
                 TEST("[%d, %" PRIx64 "]: Send(start in main): segment %d to %d at buff %p send_count %d datatype %p\n", rank, gettid(), context->frag_id, context->peer, (void *)context->buff, send_count, (void *)datatype);
-                err = MCA_PML_CALL(isend(context->buff, send_count, datatype, context->peer, i, MCA_PML_BASE_SEND_SYNCHRONOUS, comm, &send_req));
+                err = MCA_PML_CALL(isend(send_buff, send_count, datatype, context->peer, i, MCA_PML_BASE_SEND_SYNCHRONOUS, comm, &send_req));
                 
                 if (MPI_SUCCESS != err) {
                     return err;
@@ -618,12 +641,29 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
             mca_coll_adapt_cuda_bcast_context_t * context = (mca_coll_adapt_cuda_bcast_context_t *) opal_free_list_wait(context_list);
             
             context->buff = (char *)buff + i * real_seg_size;
+            context->buff_tmp = NULL;
             context->frag_id = i;
             context->peer = tree->tree_prev;
             context->con = con;
             OBJ_RETAIN(con);
+            
+            if ((tree->topo_flags == 1 && tree->tree_prev_topo_flags == 0) || (tree->topo_flags == 0 && tree->tree_prev_topo_flags == 0)) {
+                if (cpu_buff_heap == NULL) {
+                    //cpu_buff_heap = (char *)malloc(sizeof(char)* real_seg_size * num_segs);
+                    opal_output(0, "malloc heap recv\n");
+                    cpu_buff_heap = (char*)opal_cuda_malloc_host(sizeof(char)* real_seg_size * num_segs);
+                    con->cpu_buff_list = cpu_buff_heap;
+                }
+                con->cpu_buff_list = cpu_buff_heap;
+                opal_output(0, "recv change recv buff\n");
+                recv_buff = con->cpu_buff_list + i * real_seg_size;
+                context->buff_tmp = recv_buff;
+            } else {
+                recv_buff = context->buff;
+            }
+            
             TEST("[%d, %" PRIx64 "]: Recv(start in main): segment %d from %d at buff %p recv_count %d datatype %p comm %p\n", ompi_comm_rank(context->con->comm), gettid(), context->frag_id, context->peer, (void *)context->buff, recv_count, (void *)datatype, (void *)comm);
-            err = MCA_PML_CALL(irecv(context->buff, recv_count, datatype, context->peer, context->frag_id, comm, &recv_req));
+            err = MCA_PML_CALL(irecv(recv_buff, recv_count, datatype, context->peer, context->frag_id, comm, &recv_req));
             if (MPI_SUCCESS != err) {
                 return err;
             }

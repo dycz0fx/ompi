@@ -120,11 +120,11 @@ void *opal_cuda_memcpy(void *dest, const void *src, size_t size, opal_convertor_
     int res;
 
     if (!(convertor->flags & CONVERTOR_CUDA)) {
-        opal_timer_t ts_start, ts_end;
-        ts_start = opal_timer_base_get_usec();
+  //      opal_timer_t ts_start, ts_end;
+    //    ts_start = opal_timer_base_get_usec();
         memcpy(dest, src, size);
-        ts_end = opal_timer_base_get_usec();
-        opal_output(0, "CPU memcpy took %7.2f usecs, size %ld, BW %fMB/s\n", (float)(ts_end - ts_start), size, size/1024.0/1024.0/(float)(ts_end-ts_start)*1E6);
+      //  ts_end = opal_timer_base_get_usec();
+    //    opal_output(0, "CPU memcpy took %7.2f usecs, size %ld, BW %fMB/s\n", (float)(ts_end - ts_start), size, size/1024.0/1024.0/(float)(ts_end-ts_start)*1E6);
         return dest;
     }
 
