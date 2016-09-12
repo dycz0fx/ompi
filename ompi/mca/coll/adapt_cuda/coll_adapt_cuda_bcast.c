@@ -12,10 +12,11 @@
 #include "opal/sys/atomic.h"                //atomic
 #include "ompi/mca/pml/ob1/pml_ob1.h"       //dump
 #include "opal/datatype/opal_datatype_cuda.h"
+#include "coll_adapt_cuda_mpool.h"
 
 #define SEND_NUM 2    //send how many fragments at once
 #define RECV_NUM 3    //receive how many fragments at once
-#define SEG_SIZE 2000000   //size of a segment
+#define SEG_SIZE 1024*1024*2   //size of a segment
 #define FREE_LIST_NUM 10    //The start size of the free list
 #define FREE_LIST_MAX 10000  //The max size of the free list
 #define FREE_LIST_INC 10    //The incresment of the free list
@@ -26,6 +27,7 @@ static void printfno(){
 }
 
 char *cpu_buff_heap = NULL;
+mca_mpool_base_module_t *cpu_pined_mpool = NULL;
 
 #define TIMER_DATA_TYPE struct timeval
 #define GET_TIME(TV)   gettimeofday( &(TV), NULL )
@@ -561,10 +563,13 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
                         //cpu_buff_heap = (char *)malloc(sizeof(char)* real_seg_size * num_segs);
                         opal_output(0, "malloc heap send\n");
                         cpu_buff_heap = (char*)opal_cuda_malloc_host(sizeof(char)* real_seg_size * num_segs);
-                        con->cpu_buff_list = cpu_buff_heap;
+                        cpu_pined_mpool = coll_adapt_cuda_mpool_create();
+                       // con->cpu_buff_list = cpu_buff_heap;
                     }
                     if (con->cpu_buff_memcpy_flags == NULL) {
-                        con->cpu_buff_list = cpu_buff_heap;
+                        //con->cpu_buff_list = cpu_buff_heap;
+                        con->cpu_buff_list = cpu_pined_mpool->mpool_alloc(cpu_pined_mpool, sizeof(char)* real_seg_size * num_segs, 0, 0);
+                        assert(con->cpu_buff_list != NULL);
                         con->cpu_buff_memcpy_flags = (int *)malloc(sizeof(int) * num_segs);
                         for (k = 0; k < num_segs; k++) {
                             con->cpu_buff_memcpy_flags[k] = CPU_BUFFER_MEMCPY_NOT_DONE;
@@ -652,9 +657,14 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
                     //cpu_buff_heap = (char *)malloc(sizeof(char)* real_seg_size * num_segs);
                     opal_output(0, "malloc heap recv\n");
                     cpu_buff_heap = (char*)opal_cuda_malloc_host(sizeof(char)* real_seg_size * num_segs);
-                    con->cpu_buff_list = cpu_buff_heap;
+                    //con->cpu_buff_list = cpu_buff_heap;
+                    cpu_pined_mpool = coll_adapt_cuda_mpool_create();
                 }
-                con->cpu_buff_list = cpu_buff_heap;
+                if (con->cpu_buff_list == NULL) {
+                    //con->cpu_buff_list = cpu_buff_heap;
+                    con->cpu_buff_list = cpu_pined_mpool->mpool_alloc(cpu_pined_mpool, sizeof(char)* real_seg_size * num_segs, 0, 0);
+                }
+                assert(con->cpu_buff_list != NULL);
                 opal_output(0, "recv change recv buff\n");
                 recv_buff = con->cpu_buff_list + i * real_seg_size;
                 context->buff_tmp = recv_buff;
@@ -690,8 +700,9 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
     if (con->num_segs !=0) {
         free(con->recv_array);
     }
-    if (cpu_buff_list != NULL) {
-        free(cpu_buff_list);
+    if (con->cpu_buff_list != NULL) {
+        cpu_pined_mpool->mpool_free(cpu_pined_mpool, con->cpu_buff_list);
+        con->cpu_buff_list = NULL;
     }
     if (con->cpu_buff_memcpy_flags != NULL) {
         free(con->cpu_buff_memcpy_flags);

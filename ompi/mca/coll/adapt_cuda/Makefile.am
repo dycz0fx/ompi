@@ -22,6 +22,8 @@ sources = \
 	coll_adapt_cuda_context.c \
 	coll_adapt_cuda_inbuf.c \
 	coll_adapt_cuda_inbuf.h \
+        coll_adapt_cuda_mpool.c \
+        coll_adapt_cuda_mpool.h \
 	coll_adapt_cuda_item.c \
 	coll_adapt_cuda_item.h
 
