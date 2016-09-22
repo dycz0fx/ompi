@@ -94,6 +94,7 @@ static int rte_init(void)
     uint16_t u16, *u16ptr;
     char **peers=NULL, *mycpuset, **cpusets=NULL;
     opal_process_name_t wildcard_rank, pname;
+    bool bool_val, *bool_ptr = &bool_val, tdir_mca_override = false;
     size_t i;
 
     /* run the prolog */
@@ -214,6 +215,13 @@ static int rte_init(void)
         orte_process_info.num_local_peers = 0;
     }
 
+    /* get number of nodes in the job */
+    OPAL_MODEX_RECV_VALUE_OPTIONAL(ret, OPAL_PMIX_NUM_NODES,
+                                   &wildcard_rank, &u32ptr, OPAL_UINT32);
+    if (OPAL_SUCCESS == ret) {
+        orte_process_info.num_nodes = u32;
+    }
+
     /* setup transport keys in case the MPI layer needs them -
      * we can use the jobfam and stepid as unique keys
      * because they are unique values assigned by the RM
@@ -233,6 +241,63 @@ static int rte_init(void)
         added_transport_keys = true;
         /* cannot free the envar as that messes up our environ */
         free(string_key);
+    }
+
+    /* retrieve temp directories info */
+    OPAL_MODEX_RECV_VALUE_OPTIONAL(ret, OPAL_PMIX_TMPDIR, &wildcard_rank, &val, OPAL_STRING);
+    if (OPAL_SUCCESS == ret && NULL != val) {
+        /* We want to provide user with ability 
+         * to override RM settings at his own risk
+         */
+        if( NULL == orte_process_info.top_session_dir ){
+            orte_process_info.top_session_dir = val;
+        } else {
+            /* keep the MCA setting */
+            tdir_mca_override = true;
+            free(val);
+        }
+        val = NULL;
+    }
+
+    if( !tdir_mca_override ){
+        OPAL_MODEX_RECV_VALUE_OPTIONAL(ret, OPAL_PMIX_NSDIR, &wildcard_rank, &val, OPAL_STRING);
+        if (OPAL_SUCCESS == ret && NULL != val) {
+            /* We want to provide user with ability 
+             * to override RM settings at his own risk
+             */
+            if( NULL == orte_process_info.job_session_dir ){
+                orte_process_info.job_session_dir = val;
+            } else {
+                /* keep the MCA setting */
+                free(val);
+                tdir_mca_override = true;
+            }
+            val = NULL;
+        }
+    }
+
+    if( !tdir_mca_override ){
+        OPAL_MODEX_RECV_VALUE_OPTIONAL(ret, OPAL_PMIX_PROCDIR, &wildcard_rank, &val, OPAL_STRING);
+        if (OPAL_SUCCESS == ret && NULL != val) {
+            /* We want to provide user with ability 
+             * to override RM settings at his own risk
+             */
+            if( NULL == orte_process_info.proc_session_dir ){
+                orte_process_info.proc_session_dir = val;
+            } else {
+                /* keep the MCA setting */
+                tdir_mca_override = true;
+                free(val);
+            }
+            val = NULL;
+        }
+    }
+
+    if( !tdir_mca_override ){
+        OPAL_MODEX_RECV_VALUE_OPTIONAL(ret, OPAL_PMIX_TDIR_RMCLEAN, &wildcard_rank, &bool_ptr, OPAL_BOOL);
+        if (OPAL_SUCCESS == ret ) {
+            orte_process_info.rm_session_dirs = bool_val;
+        }
     }
 
     /* retrieve our topology */

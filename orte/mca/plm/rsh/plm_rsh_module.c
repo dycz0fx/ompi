@@ -15,7 +15,7 @@
  * Copyright (c) 2008-2009 Sun Microsystems, Inc.  All rights reserved.
  * Copyright (c) 2011      IBM Corporation.  All rights reserved.
  * Copyright (c) 2014-2015 Intel Corporation.  All rights reserved.
- * Copyright (c) 2015      Research Organization for Information Science
+ * Copyright (c) 2015-2016 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * $COPYRIGHT$
  *
@@ -606,17 +606,10 @@ static int setup_launch(int *argcptr, char ***argvptr,
      * Add the basic arguments to the orted command line, including
      * all debug options
      */
-    if (ORTE_PROC_IS_CM) {
-        orte_plm_base_orted_append_basic_args(&argc, &argv,
-                                              NULL,
-                                              proc_vpid_index,
-                                              NULL);
-    } else {
-        orte_plm_base_orted_append_basic_args(&argc, &argv,
-                                              "env",
-                                              proc_vpid_index,
-                                              NULL);
-    }
+    orte_plm_base_orted_append_basic_args(&argc, &argv,
+                                          "env",
+                                          proc_vpid_index,
+                                          NULL);
 
     /* ensure that only the ssh plm is selected on the remote daemon */
     opal_argv_append_nosize(&argv, "-"OPAL_MCA_CMD_LINE_ID);
@@ -1428,6 +1421,9 @@ static int launch_agent_setup(const char *agent, char *path)
                 opal_argv_append_nosize(&rsh_agent_argv, "-x");
             }
         }
+    }
+    if (NULL != bname) {
+        free(bname);
     }
 
     /* the caller can append any additional argv's they desire */

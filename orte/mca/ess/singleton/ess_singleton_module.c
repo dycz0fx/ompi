@@ -15,6 +15,8 @@
  * Copyright (c) 2013-2016 Intel, Inc.  All rights reserved.
  * Copyright (c) 2015      Los Alamos National Security, LLC. All rights
  *                         reserved.
+ * Copyright (c) 2016      Research Organization for Information Science
+ *                         and Technology (RIST). All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -83,9 +85,7 @@ static int rte_init(void)
 {
     int rc, ret;
     char *error = NULL;
-    char *envar, *ev1, *ev2;
-    uint64_t unique_key[2];
-    char *string_key;
+    char *ev1, *ev2;
     opal_value_t *kv;
     char *val;
     int u32, *u32ptr;
@@ -163,6 +163,8 @@ static int rte_init(void)
         /* ensure we use the isolated pmix component */
         opal_setenv (OPAL_MCA_PREFIX"pmix", "isolated", true, &environ);
     } else {
+        /* we want to use PMIX_NAMESPACE that will be sent by the hnp as a jobid */
+        opal_setenv(OPAL_MCA_PREFIX"orte_launch", "1", true, &environ);
         /* spawn our very own HNP to support us */
         if (ORTE_SUCCESS != (rc = fork_hnp())) {
             ORTE_ERROR_LOG(rc);
@@ -261,19 +263,7 @@ static int rte_init(void)
      * we can use the jobfam and stepid as unique keys
      * because they are unique values assigned by the RM
      */
-    if (NULL == getenv(OPAL_MCA_PREFIX"orte_precondition_transports")) {
-        unique_key[0] = ORTE_JOB_FAMILY(ORTE_PROC_MY_NAME->jobid);
-        unique_key[1] = ORTE_LOCAL_JOBID(ORTE_PROC_MY_NAME->jobid);
-        if (NULL == (string_key = orte_pre_condition_transports_print(unique_key))) {
-            ORTE_ERROR_LOG(ORTE_ERR_OUT_OF_RESOURCE);
-            return ORTE_ERR_OUT_OF_RESOURCE;
-        }
-        asprintf(&envar, OPAL_MCA_PREFIX"orte_precondition_transports=%s", string_key);
-        putenv(envar);
-        added_transport_keys = true;
-        /* cannot free the envar as that messes up our environ */
-        free(string_key);
-    }
+    assert (NULL != getenv(OPAL_MCA_PREFIX"orte_precondition_transports"));
 
     /* retrieve our topology */
     OPAL_MODEX_RECV_VALUE(ret, OPAL_PMIX_LOCAL_TOPO,
@@ -564,6 +554,8 @@ static int fork_hnp(void)
         exit(1);
 
     } else {
+        int count;
+
         free(cmd);
         /* I am the parent - wait to hear something back and
          * report results
@@ -579,14 +571,20 @@ static int fork_hnp(void)
         orted_uri = (char*)malloc(buffer_length);
         memset(orted_uri, 0, buffer_length);
 
-        while (chunk == (rc = read(p[0], &orted_uri[num_chars_read], chunk))) {
-            /* we read an entire buffer - better get more */
-            num_chars_read += chunk;
-            orted_uri = realloc((void*)orted_uri, buffer_length+ORTE_URI_MSG_LGTH);
-            memset(&orted_uri[buffer_length], 0, ORTE_URI_MSG_LGTH);
-            buffer_length += ORTE_URI_MSG_LGTH;
+        while (0 != (rc = read(p[0], &orted_uri[num_chars_read], chunk))) {
+            if (rc < 0 && (EAGAIN == errno || EINTR == errno)) {
+                continue;
+            } else if (rc < 0) {
+                num_chars_read = -1;
+                break;
+            }
+            /* we read something - better get more */
+            num_chars_read += rc;
+            orted_uri = realloc((void*)orted_uri, buffer_length+chunk);
+            memset(&orted_uri[buffer_length], 0, chunk);
+            buffer_length += chunk;
         }
-        num_chars_read += rc;
+        close(p[0]);
 
         if (num_chars_read <= 0) {
             /* we didn't get anything back - this is bad */
@@ -630,12 +628,9 @@ static int fork_hnp(void)
 
         /* split the pmix_uri into its parts */
         argv = opal_argv_split(cptr, ',');
-        if (4 != opal_argv_count(argv)) {
-            opal_argv_free(argv);
-            return ORTE_ERR_BAD_PARAM;
-        }
+        count = opal_argv_count(argv);
         /* push each piece into the environment */
-        for (i=0; i < 4; i++) {
+        for (i=0; i < count; i++) {
             pmixenvars[i] = strdup(argv[i]);
             putenv(pmixenvars[i]);
         }
