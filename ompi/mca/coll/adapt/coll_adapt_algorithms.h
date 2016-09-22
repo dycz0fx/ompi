@@ -111,17 +111,24 @@ int mca_coll_adapt_alltoallv(const void *sbuf, const int *scounts, const int *sd
 int mca_coll_adapt_ialltoallv(const void *sbuf, const int *scounts, const int *sdisps, struct ompi_datatype_t *sdtype, void* rbuf, const int *rcounts, const int *rdisps, struct ompi_datatype_t *rdtype, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module);
 
 //get thread id for test
-static inline uint64_t gettid(void) {
-    pthread_t ptid = pthread_self();
-    uint64_t threadId = 0;
-    int min;
-    if (sizeof(threadId) < sizeof(ptid)) {
-        min = sizeof(threadId);
-    }
-    else
-        min = sizeof(ptid);
-    memcpy(&threadId, &ptid, min);
-    return threadId;
+//static inline uint64_t gettid(void) {
+//    pthread_t ptid = pthread_self();
+//    uint64_t threadId = 0;
+//    int min;
+//    if (sizeof(threadId) < sizeof(ptid)) {
+//        min = sizeof(threadId);
+//    }
+//    else
+//        min = sizeof(ptid);
+//    memcpy(&threadId, &ptid, min);
+//    return threadId;
+//}
+
+static int log2_int(int n)
+{
+    int i=0;
+    while (n>>=1) ++i;
+    return i;
 }
 
 //print tree for test
@@ -139,8 +146,9 @@ static inline void print_tree(ompi_coll_tree_t* tree, int rank) {
 
 static inline int adapt_request_free(ompi_request_t** request)
 {
+    printf("[%" PRIx64 ", request %p]: adapt_request_free\n", gettid(), (void *) (*request));
     (*request)->req_state = OMPI_REQUEST_INVALID;
-    OBJ_RELEASE(*request);
+    OBJ_RELEASE(*request);
     *request = MPI_REQUEST_NULL;
     return OMPI_SUCCESS;
 }

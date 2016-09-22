@@ -158,8 +158,6 @@ static int recv_cb(ompi_request_t *req){
     }
     opal_mutex_unlock (context->con->mutex);
     
-    
-    
     //if this is leaf and has received all the segments
     if (context->con->tree->tree_nextsize == 0 && num_recv_segs_t == context->con->num_segs) {
         ompi_request_t *temp_req = context->con->request;

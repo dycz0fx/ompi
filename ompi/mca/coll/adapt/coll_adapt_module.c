@@ -178,11 +178,11 @@ mca_coll_adapt_comm_query(struct ompi_communicator_t *comm, int *priority)
     //adapt_module->super.coll_alltoallv  = mca_coll_adapt_alltoallv;
     adapt_module->super.coll_alltoallw  = NULL;
     adapt_module->super.coll_barrier    = NULL;
-    adapt_module->super.coll_bcast      = mca_coll_adapt_bcast;
+    adapt_module->super.coll_bcast      = NULL; //mca_coll_adapt_bcast;
     adapt_module->super.coll_exscan     = NULL;
     adapt_module->super.coll_gather     = NULL;
     adapt_module->super.coll_gatherv    = NULL;
-    adapt_module->super.coll_reduce     = mca_coll_adapt_reduce;
+    adapt_module->super.coll_reduce     = NULL; //mca_coll_adapt_reduce;
     adapt_module->super.coll_reduce_scatter = NULL;
     adapt_module->super.coll_scan       = NULL;
     adapt_module->super.coll_scatter    = NULL;

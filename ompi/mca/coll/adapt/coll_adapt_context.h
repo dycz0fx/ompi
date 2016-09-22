@@ -285,7 +285,11 @@ struct mca_coll_adapt_constant_allreduce_context_s {
     int adjsize;
     int sendbuf_ready;
     int inbuf_ready;
-    int last_send;
+    int total_send;
+    int total_recv;
+    opal_mutex_t * mutex_buf;
+    opal_mutex_t * mutex_total_send;
+    opal_mutex_t * mutex_total_recv;
 };
 
 typedef struct mca_coll_adapt_constant_allreduce_context_s mca_coll_adapt_constant_allreduce_context_t;
