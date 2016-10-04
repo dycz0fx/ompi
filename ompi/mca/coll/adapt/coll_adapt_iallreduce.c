@@ -36,7 +36,7 @@ static int send_cb(ompi_request_t *req){
     
     mca_coll_adapt_allreduce_context_t *context = (mca_coll_adapt_allreduce_context_t *) req->req_complete_cb_data;
     
-    TEST("[%d]: send_cb, peer = %d, distance = %d, inbuf_ready = %d, sendbuf_ready = %d\n", ompi_comm_rank(context->con->comm), context->peer, context->distance, context->con->inbuf_ready, context->con->sendbuf_ready);
+    TEST("[%d]: send_cb, peer = %d, distance = %d, inbuf_ready = %d, sendbuf_ready = %d, sendbuf[1] = %d, recvbuf[1] = %d\n", ompi_comm_rank(context->con->comm), context->peer, context->distance, context->con->inbuf_ready, context->con->sendbuf_ready, ((int *)context->con->sendbuf)[1], ((int *)context->inbuf->buff-context->con->lower_bound)[1]);
     int err;
     int rank = ompi_comm_rank(context->con->comm);
     //set new distance
@@ -55,9 +55,9 @@ static int send_cb(ompi_request_t *req){
         opal_atomic_add_32(&(context->con->sendbuf_ready), -1);
         opal_atomic_add_32(&(context->con->inbuf_ready), -1);
         
-        int newremote;
-        int remote;
-        mca_coll_adapt_allreduce_context_t * recv_context;
+        int newremote = 0;
+        int remote = 0;
+        mca_coll_adapt_allreduce_context_t * recv_context = NULL;
         //recv from new distance
         if (new_distance < context->con->adjsize && context->newrank >= 0) {
             mca_coll_adapt_inbuf_t * inbuf = (mca_coll_adapt_inbuf_t *) opal_free_list_wait(context->con->inbuf_list);
@@ -89,8 +89,9 @@ static int send_cb(ompi_request_t *req){
             recvbuf = context->con->recvbuf;
         }
         //sendbuf = recvbuf + sendbuf
+        printf("[%d]: send_cb, distance = %d, recvbuf[1] = %d,sendbuf[1] = %d\n", rank, context->distance, ((int *)recvbuf)[1], ((int *)context->con->sendbuf)[1]);
         ompi_op_reduce(context->con->op, recvbuf, context->con->sendbuf, context->con->count, context->con->datatype);
-        
+        printf("[%d]: send_cb, distance = %d, sendbuf[1] = %d\n", rank, context->distance, ((int *)context->con->sendbuf)[1]);
         //send to new distance
         if (new_distance < context->con->adjsize && context->newrank >= 0) {
             mca_coll_adapt_allreduce_context_t * send_context = (mca_coll_adapt_allreduce_context_t *) opal_free_list_wait(context->con->context_list);
@@ -145,7 +146,7 @@ static int send_cb(ompi_request_t *req){
     opal_mutex_t * mutex_temp = context->con->mutex_total_send;
     OPAL_THREAD_LOCK(mutex_temp);
     int * temp_total_send = &(context->con->total_send);
-    TEST("adjsize %d, new_distance %d, new_rank %d, total_send %d\n",context->con->adjsize, new_distance, context->newrank, context->con->total_send);
+    TEST("[%d]: adjsize %d, new_distance %d, new_rank %d, total_send %d\n", rank, context->con->adjsize, new_distance, context->newrank, context->con->total_send);
     //this is the last send the node with newrank < 0 only do one send
     if (context->con->total_send == 1) {
         OPAL_THREAD_UNLOCK(mutex_temp);
@@ -157,6 +158,10 @@ static int send_cb(ompi_request_t *req){
             //signal
             TEST("[%d]: last send, signal\n", ompi_comm_rank(context->con->comm));
             ompi_request_t *temp_req = context->con->request;
+            if (ready && context->newrank >= 0) {
+                TEST("[%d]: send_cb return inbuf item\n", rank);
+                opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)context->inbuf);
+            }
             opal_free_list_t * temp = context->con->context_list;
             OBJ_RELEASE(context->con->inbuf_list);
             OBJ_RELEASE(context->con->context_list);
@@ -178,6 +183,10 @@ static int send_cb(ompi_request_t *req){
         }
     }
     else{
+        if (ready && context->newrank >= 0) {
+            TEST("[%d]: send_cb return inbuf item\n", rank);
+            opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)context->inbuf);
+        }
         opal_free_list_t * temp = context->con->context_list;
         OBJ_RELEASE(context->con);
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
@@ -196,8 +205,7 @@ static int recv_cb(ompi_request_t *req){
     
     mca_coll_adapt_allreduce_context_t *context = (mca_coll_adapt_allreduce_context_t *) req->req_complete_cb_data;
     
-    TEST("[%d]: recv_cb, peer = %d, distance = %d, inbuf_ready = %d, sendbuf_ready = %d\n", ompi_comm_rank(context->con->comm), context->peer, context->distance, context->con->inbuf_ready, context->con->sendbuf_ready);
-    
+    TEST("[%d]: recv_cb, peer = %d, distance = %d, inbuf_ready = %d, sendbuf_ready = %d, sendbuf[1] = %d, recvbuf[1] = %d\n", ompi_comm_rank(context->con->comm), context->peer, context->distance, context->con->inbuf_ready, context->con->sendbuf_ready, ((int *)context->con->sendbuf)[1], ((int *)context->inbuf->buff-context->con->lower_bound)[1]);
     int err;
     int rank = ompi_comm_rank(context->con->comm);
     //set new distance
@@ -251,8 +259,9 @@ static int recv_cb(ompi_request_t *req){
             recvbuf = context->con->recvbuf;
         }
         //sendbuf = recvbuf + sendbuf
+        printf("[%d]: recv_cb, distance = %d, recvbuf[1] = %d,sendbuf[1] = %d\n", rank, context->distance, ((int *)recvbuf)[1], ((int *)context->con->sendbuf)[1]);
         ompi_op_reduce(context->con->op, recvbuf, context->con->sendbuf, context->con->count, context->con->datatype);
-        
+        printf("[%d]: recv_cb, distance = %d, sendbuf[1] = %d\n", rank, context->distance, ((int *)context->con->sendbuf)[1]);
         //send to new distance
         if (new_distance < context->con->adjsize && context->newrank >= 0) {
             mca_coll_adapt_allreduce_context_t * send_context = (mca_coll_adapt_allreduce_context_t *) opal_free_list_wait(context->con->context_list);
@@ -315,7 +324,8 @@ static int recv_cb(ompi_request_t *req){
             //signal
             TEST("[%d]: last recv, signal\n", ompi_comm_rank(context->con->comm));
             ompi_request_t *temp_req = context->con->request;
-            if (context->newrank > 0) {
+            if (ready && context->newrank >= 0) {
+                TEST("[%d]: recv_cb return inbuf item\n", rank);
                 opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)context->inbuf);
             }
             opal_free_list_t * temp = context->con->context_list;
@@ -339,7 +349,8 @@ static int recv_cb(ompi_request_t *req){
         }
     }
     else{
-        if (context->newrank > 0) {
+        if (ready && context->newrank >= 0) {
+            TEST("[%d]: recv_cb return inbuf item\n", rank);
             opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)context->inbuf);
         }
         opal_free_list_t * temp = context->con->context_list;

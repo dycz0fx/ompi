@@ -18,6 +18,8 @@
 #define FREE_LIST_INC_INBUF_LIST 2    //The incresment of the context free list
 
 #define TEST printfno
+#define COUNT_TIME 1
+
 
 static void printfno(){
     
@@ -96,9 +98,7 @@ static int send_cb(ompi_request_t *req){
                 return err;
             }
             //invoke recv call back
-            if(!ompi_request_set_callback(recv_req, recv_cb, recv_context)) {
-                recv_cb(recv_req);
-            }
+            ompi_request_set_callback(recv_req, recv_cb, recv_context);
         }
         //do the operation, commutative
         char* recvbuf;
@@ -129,9 +129,7 @@ static int send_cb(ompi_request_t *req){
                 return err;
             }
             //invoke send call back
-            if(!ompi_request_set_callback(send_req, send_cb, send_context)) {
-                send_cb(send_req);
-            }
+            ompi_request_set_callback(send_req, send_cb, send_context);
         }
         
         //this is the last send
@@ -156,20 +154,21 @@ static int send_cb(ompi_request_t *req){
                         return err;
                     }
                     //invoke send call back
-                    if(!ompi_request_set_callback(send_req, send_cb, send_context)) {
-                        send_cb(send_req);
-                    }
+                    ompi_request_set_callback(send_req, send_cb, send_context);
                 }
                 //copy to recvbuf
                 ompi_datatype_copy_content_same_ddt(context->con->datatype, context->con->count, context->con->recvbuf, context->con->sendbuf);
             }
         }
     }
-
+    
+    opal_mutex_t * mutex_temp = context->con->mutex_total_send;
+    OPAL_THREAD_LOCK(mutex_temp);
     int * temp_total_send = &(context->con->total_send);
     TEST("adjsize %d, new_distance %d, new_rank %d, total_send %d\n",context->con->adjsize, new_distance, context->newrank, context->con->total_send);
     //this is the last send the node with newrank < 0 only do one send
     if (context->con->total_send == 1) {
+        OPAL_THREAD_UNLOCK(mutex_temp);
         int complete;
         complete = opal_atomic_add_32(&(context->con->complete), 1);
 
@@ -183,6 +182,8 @@ static int send_cb(ompi_request_t *req){
             OBJ_RELEASE(context->con->context_list);
             free(context->con->sendbuf);
             OBJ_RELEASE(context->con->mutex_buf);
+            OBJ_RELEASE(context->con->mutex_total_send);
+            OBJ_RELEASE(context->con->mutex_total_recv);
             OBJ_RELEASE(context->con);
             OBJ_RELEASE(context->con);
             opal_free_list_return(temp, (opal_free_list_item_t*)context);
@@ -196,6 +197,7 @@ static int send_cb(ompi_request_t *req){
         OBJ_RELEASE(context->con);
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
         opal_atomic_add_32(temp_total_send, -1);
+        OPAL_THREAD_UNLOCK(mutex_temp);
     }
     OPAL_THREAD_UNLOCK (req->req_lock);
     req->req_free(&req);
@@ -231,9 +233,9 @@ static int recv_cb(ompi_request_t *req){
         opal_atomic_add_32(&(context->con->sendbuf_ready), -1);
         opal_atomic_add_32(&(context->con->inbuf_ready), -1);
 
-        int newremote;
-        int remote;
-        mca_coll_adapt_allreduce_context_t * recv_context;
+        int newremote = 0;
+        int remote = 0;
+        mca_coll_adapt_allreduce_context_t * recv_context = NULL;
         //recv from new distance
         if (new_distance < context->con->adjsize && context->newrank >= 0) {
             mca_coll_adapt_inbuf_t * inbuf = (mca_coll_adapt_inbuf_t *) opal_free_list_wait(context->con->inbuf_list);
@@ -254,9 +256,7 @@ static int recv_cb(ompi_request_t *req){
                 return err;
             }
             //invoke recv call back
-            if(!ompi_request_set_callback(recv_req, recv_cb, recv_context)) {
-                recv_cb(recv_req);
-            }
+            ompi_request_set_callback(recv_req, recv_cb, recv_context);
         }
         //do the operation, commutative
         char* recvbuf;
@@ -287,9 +287,7 @@ static int recv_cb(ompi_request_t *req){
                 return err;
             }
             //invoke send call back
-            if(!ompi_request_set_callback(send_req, send_cb, send_context)) {
-                send_cb(send_req);
-            }
+            ompi_request_set_callback(send_req, send_cb, send_context);
         }
         
         //this is the last recv
@@ -313,9 +311,7 @@ static int recv_cb(ompi_request_t *req){
                         return err;
                     }
                     //invoke send call back
-                    if(!ompi_request_set_callback(send_req, send_cb, send_context)) {
-                        send_cb(send_req);
-                    }
+                    ompi_request_set_callback(send_req, send_cb, send_context);
                 }
                 //copy to recvbuf
                 ompi_datatype_copy_content_same_ddt(context->con->datatype, context->con->count, context->con->recvbuf, context->con->sendbuf);
@@ -323,9 +319,12 @@ static int recv_cb(ompi_request_t *req){
         }
     }
     
+    opal_mutex_t * mutex_temp = context->con->mutex_total_recv;
+    OPAL_THREAD_LOCK(mutex_temp);
     int * temp_total_recv = &(context->con->total_recv);
     //this is the last recv, the node with newrank < 0 only do one recv
     if (context->con->total_recv == 1){
+        OPAL_THREAD_UNLOCK(mutex_temp);
         int complete = opal_atomic_add_32(&(context->con->complete), 1);
         TEST("[%d]: last recv, complete = %d\n", ompi_comm_rank(context->con->comm), complete);
         if (complete == 2) {
@@ -340,6 +339,8 @@ static int recv_cb(ompi_request_t *req){
             OBJ_RELEASE(context->con->context_list);
             free(context->con->sendbuf);
             OBJ_RELEASE(context->con->mutex_buf);
+            OBJ_RELEASE(context->con->mutex_total_send);
+            OBJ_RELEASE(context->con->mutex_total_recv);
             OBJ_RELEASE(context->con);
             OBJ_RELEASE(context->con);
             opal_free_list_return(temp, (opal_free_list_item_t*)context);
@@ -356,6 +357,7 @@ static int recv_cb(ompi_request_t *req){
         OBJ_RELEASE(context->con);
         opal_free_list_return(temp, (opal_free_list_item_t*)context);
         opal_atomic_add_32(temp_total_recv, -1);
+        OPAL_THREAD_UNLOCK(mutex_temp);
     }
     OPAL_THREAD_UNLOCK (req->req_lock);
     req->req_free(&req);
@@ -434,6 +436,8 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
     
     //set up mutex
     opal_mutex_t * mutex_buf = OBJ_NEW(opal_mutex_t);
+    opal_mutex_t * mutex_total_send = OBJ_NEW(opal_mutex_t);
+    opal_mutex_t * mutex_total_recv = OBJ_NEW(opal_mutex_t);
     
     //Set constant context for send and recv call back
     mca_coll_adapt_constant_allreduce_context_t *con = OBJ_NEW(mca_coll_adapt_constant_allreduce_context_t);
@@ -451,9 +455,12 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
     con->complete = 0;
     con->adjsize = adjsize;
     con->sendbuf_ready = 0;     //use to decide if sendbuf is ready for reuse
+    con->inbuf_ready = 0;     //use to decide if inbuf has the data already
     con->total_send = 0;         //to tell how many sends are needed in total
     con->total_recv = 0;        //to tell how many recvs are needed in total
     con->mutex_buf = mutex_buf;
+    con->mutex_total_send = mutex_total_send;
+    con->mutex_total_recv = mutex_total_recv;
     
     /* Handle non-power-of-two case:
      - Even ranks less than 2 * extra_ranks send their data to (rank + 1), and
@@ -488,9 +495,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
                 return err;
             }
             //invoke send call back
-            if(!ompi_request_set_callback(send_req, send_cb, send_context)) {
-                send_cb(send_req);
-            }
+            ompi_request_set_callback(send_req, send_cb, send_context);
             
             //recv from rank+1 at last round, since this node just recv once at last,
             //so there is no need to use inbuf_list, set distance to adjsize+1
@@ -509,9 +514,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
                 return err;
             }
             //invoke recv call back
-            if(!ompi_request_set_callback(recv_req, recv_cb, recv_context)) {
-                recv_cb(recv_req);
-            }
+            ompi_request_set_callback(recv_req, recv_cb, recv_context);
         }
         else {
             TEST("[%d]: Case 2\n", rank);
@@ -537,9 +540,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
                 return err;
             }
             //invoke recv call back
-            if(!ompi_request_set_callback(recv_req, recv_cb, recv_context)) {
-                recv_cb(recv_req);
-            }
+            ompi_request_set_callback(recv_req, recv_cb, recv_context);
         }
     }
     else {
@@ -569,9 +570,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
             return err;
         }
         //invoke recv call back
-        if(!ompi_request_set_callback(recv_req, recv_cb, recv_context)) {
-            recv_cb(recv_req);
-        }
+        ompi_request_set_callback(recv_req, recv_cb, recv_context);
         
         //send to distance = 1
         mca_coll_adapt_allreduce_context_t * send_context = (mca_coll_adapt_allreduce_context_t *) opal_free_list_wait(context_list);
@@ -591,9 +590,7 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
             return err;
         }
         //invoke send call back
-        if(!ompi_request_set_callback(send_req, send_cb, send_context)) {
-            send_cb(send_req);
-        }
+        ompi_request_set_callback(send_req, send_cb, send_context);
         
     }
     ompi_request_wait(&temp_request, MPI_STATUS_IGNORE);
@@ -601,8 +598,21 @@ int mca_coll_adapt_allreduce_intra_recursivedoubling(const void *sbuf, void *rbu
     return MPI_SUCCESS;
 }
 
+double totaltime_1 = 0;
+
 int mca_coll_adapt_allreduce(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    return mca_coll_adapt_allreduce_intra_recursivedoubling(sbuf, rbuf, count, dtype, op, comm, module);
+    TEST("mca_coll_adapt_allreduce\n");
+    double starttime_1, endtime_1;
+    if (COUNT_TIME) {
+        starttime_1 = MPI_Wtime();
+    }
+    int error =  mca_coll_adapt_allreduce_intra_recursivedoubling(sbuf, rbuf, count, dtype, op, comm, module);
+    if (COUNT_TIME) {
+        endtime_1 = MPI_Wtime();
+        totaltime_1 += (endtime_1 - starttime_1);
+        printf("[%d]: Total Time in allreduce: %lf, start %lf, end %lf\n", ompi_comm_rank(comm), totaltime_1, starttime_1, endtime_1);
+    }
+    return error;
 }
 
 
