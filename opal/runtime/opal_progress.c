@@ -35,8 +35,15 @@
 #include "opal/mca/timer/base/base.h"
 #include "opal/util/output.h"
 #include "opal/runtime/opal_params.h"
+#include "opal/runtime/opal_progress_threads.h"
 
 #define OPAL_PROGRESS_USE_TIMERS (OPAL_TIMER_CYCLE_SUPPORTED || OPAL_TIMER_USEC_SUPPORTED)
+
+/* OPAL asynchronous progress thread stuff */
+static opal_thread_t opal_async_thread = { 0 };
+void* opal_progress_thread_engine(void);
+volatile int main_thread_in_progress = 0;
+opal_mutex_t opal_progress_lock;
 
 #if OPAL_ENABLE_DEBUG
 bool opal_progress_debug = false;
@@ -142,6 +149,17 @@ opal_progress_init(void)
     OPAL_OUTPUT((debug_output, "progress: initialized poll rate to: %ld",
                  (long) event_progress_delta));
 
+    /* Experimental opal progress thread */
+    OBJ_CONSTRUCT(&opal_async_thread, opal_thread_t);
+    OBJ_CONSTRUCT(&opal_progress_lock, opal_mutex_t);
+
+    opal_async_thread.t_run = opal_progress_thread_engine;
+
+    if( OPAL_SUCCESS != opal_thread_start(&opal_async_thread)){
+        assert(0);
+        opal_output(0,"thread start failed");
+    }
+
     return OPAL_SUCCESS;
 }
 
@@ -185,8 +203,76 @@ opal_progress(void)
     static volatile uint32_t num_calls = 0;
     size_t i;
     int events = 0;
-
+    main_thread_in_progress = 1;
+    opal_mutex_lock(&opal_progress_lock);
     if( opal_progress_event_flag != 0 ) {
+#if OPAL_HAVE_WORKING_EVENTOPS
+#if OPAL_PROGRESS_USE_TIMERS
+#if OPAL_TIMER_USEC_NATIVE
+        opal_timer_t now = opal_timer_base_get_usec();
+#else
+        opal_timer_t now = opal_timer_base_get_cycles();
+#endif  /* OPAL_TIMER_USEC_NATIVE */
+    /* trip the event library if we've reached our tick rate and we are
+       enabled */
+        if (now - event_progress_last_time > event_progress_delta ) {
+            event_progress_last_time = (num_event_users > 0) ?
+                    now - event_progress_delta : now;
+
+                events += opal_event_loop(opal_sync_event_base, opal_progress_event_flag);
+        }
+
+#else /* OPAL_PROGRESS_USE_TIMERS */
+    /* trip the event library if we've reached our tick rate and we are
+       enabled */
+        if (OPAL_THREAD_ADD32(&event_progress_counter, -1) <= 0 ) {
+                event_progress_counter =
+                    (num_event_users > 0) ? 0 : event_progress_delta;
+                events += opal_event_loop(opal_sync_event_base, opal_progress_event_flag);
+        }
+#endif /* OPAL_PROGRESS_USE_TIMERS */
+
+#endif /* OPAL_HAVE_WORKING_EVENTOPS */
+    }
+
+    /* progress all registered callbacks */
+    for (i = 0 ; i < callbacks_len ; ++i) {
+        events += (callbacks[i])();
+    }
+
+    if (callbacks_lp_len > 0 && (OPAL_THREAD_ADD32((volatile int32_t *) &num_calls, 1) & 0x7) == 0) {
+        /* run low priority callbacks once every 8 calls to opal_progress() */
+        for (i = 0 ; i < callbacks_lp_len ; ++i) {
+            events += (callbacks_lp[i])();
+        }
+    }
+
+#if OPAL_HAVE_SCHED_YIELD
+    if (opal_progress_yield_when_idle && events <= 0) {
+        /* If there is nothing to do - yield the processor - otherwise
+         * we could consume the processor for the entire time slice. If
+         * the processor is oversubscribed - this will result in a best-case
+         * latency equivalent to the time-slice.
+         */
+        sched_yield();
+    }
+#endif  /* defined(HAVE_SCHED_YIELD) */
+    opal_mutex_unlock(&opal_progress_lock);
+    main_thread_in_progress = 0;
+}
+
+
+void*
+opal_progress_thread_engine(void)
+{
+    static volatile uint32_t num_calls = 0;
+    size_t i;
+    int events = 0;
+    while(1){
+        opal_mutex_lock(&opal_progress_lock);
+
+        if( opal_progress_event_flag != 0 ) {
+
 #if OPAL_HAVE_WORKING_EVENTOPS
 #if OPAL_PROGRESS_USE_TIMERS
 #if OPAL_TIMER_USEC_NATIVE
@@ -238,6 +324,11 @@ opal_progress(void)
         sched_yield();
     }
 #endif  /* defined(HAVE_SCHED_YIELD) */
+    opal_mutex_unlock(&opal_progress_lock);
+    if(main_thread_in_progress){
+        sleep(1);
+    }
+    }
 }
 
 
