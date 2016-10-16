@@ -1163,10 +1163,24 @@ void get_topo_gpu(int *topo, struct ompi_communicator_t* comm){
     }
     
     my_rank = ompi_comm_rank(comm);
-    if (my_rank > 3) {
+    if (my_rank > 15) {
+        self_topo[1] = 16;
+    } else if (my_rank > 11 && my_rank < 16) {
+        self_topo[1] = 12;  
+    } else if (my_rank > 9 && my_rank < 12) {
+        self_topo[1] = 10;
+    } else if (my_rank > 5 && my_rank < 10) {
+        self_topo[1] = 6;
+    } else if (my_rank > 3 && my_rank < 6) {
         self_topo[1] = 4;    
     } else {
-        self_topo[1] = min;
+        self_topo[1] = 0;
+    }
+    
+    if (my_rank > 5 && my_rank < 12) {
+        self_topo[0] = 1;
+    } else if (my_rank > 11) {
+        self_topo[0] = 2;
     }
 
     //set core id
@@ -1554,6 +1568,7 @@ ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int 
         }
         topo = (int *)malloc(sizeof(int)*size*TOPO_LEVEL);
         get_topo_gpu(topo, comm);
+        //get_topo(topo, comm);
         coll_comm->cached_topo = topo;
         coll_comm->cached_old_comm = comm;
     }

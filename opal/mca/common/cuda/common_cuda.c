@@ -125,6 +125,7 @@ static CUstream *ipcStreams = NULL;
 static CUstream dtohStream = NULL;
 static CUstream htodStream = NULL;
 static CUstream memcpyStream = NULL;
+static CUstream ncclStream = NULL;
 static int mca_common_cuda_gpu_mem_check_workaround = (CUDA_VERSION > 7000) ? 0 : 1;
 static opal_mutex_t common_cuda_init_lock;
 static opal_mutex_t common_cuda_htod_lock;
@@ -487,6 +488,7 @@ int mca_common_cuda_stage_one_init(void)
 #if OPAL_CUDA_GET_ATTRIBUTES
     OPAL_CUDA_DLSYM(libcuda_handle, cuPointerGetAttributes);
 #endif /* OPAL_CUDA_GET_ATTRIBUTES */
+    
     return 0;
 }
 
@@ -766,6 +768,14 @@ static int mca_common_cuda_stage_three_init(void)
         rc = OPAL_ERROR;
         goto cleanup_and_error;
     }
+    
+    res = cuFunc.cuStreamCreate(&ncclStream, 0);
+    if (OPAL_UNLIKELY(res != CUDA_SUCCESS)) {
+        opal_show_help("help-mpi-common-cuda.txt", "cuStreamCreate failed",
+                       true, OPAL_PROC_MY_HOSTNAME, res);
+        rc = OPAL_ERROR;
+        goto cleanup_and_error;
+    }
 
     if (mca_common_cuda_cumemcpy_async) {
         /* Create stream for use in cuMemcpyAsync synchronous copies */
@@ -912,6 +922,9 @@ void mca_common_cuda_fini(void)
         }
         if ((NULL != memcpyStream) && ctx_ok) {
             cuFunc.cuStreamDestroy(memcpyStream);
+        }
+        if ((NULL != ncclStream) && ctx_ok) {
+            cuFunc.cuStreamDestroy(ncclStream);
         }
         OBJ_DESTRUCT(&common_cuda_init_lock);
         OBJ_DESTRUCT(&common_cuda_htod_lock);
@@ -1518,6 +1531,15 @@ void *mca_common_cuda_get_dtoh_stream(void) {
 void *mca_common_cuda_get_htod_stream(void) {
     return (void *)htodStream;
 }
+
+void *mca_common_cuda_get_nccl_stream(void) {
+    return (void *)ncclStream;
+}
+
+void mca_common_cuda_sync_nccl_stream(void) {
+    cuFunc.cuStreamSynchronize(ncclStream);
+}
+
 
 /*
  * Function is called every time progress is called with the sm BTL.  If there

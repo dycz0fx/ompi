@@ -3,7 +3,7 @@
 #include "opal/mca/common/cuda/common_cuda.h"
 
 #define MPOOL_FREE_LIST_SIZE 100
-#define MPOOL_SIZE 1024*1024*100
+#define MPOOL_SIZE 1024*1024*200
 #define MPOOL_ALIGNMENT 4096
 
 static inline coll_adapt_cuda_mpool_buffer_t* obj_coll_adapt_cuda_mpool_buffer_new()

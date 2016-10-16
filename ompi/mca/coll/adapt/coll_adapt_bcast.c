@@ -14,7 +14,7 @@
 
 #define SEND_NUM 2    //send how many fragments at once
 #define RECV_NUM 3    //receive how many fragments at once
-#define SEG_SIZE 2000000   //size of a segment
+#define SEG_SIZE 160*1024   //size of a segment
 #define FREE_LIST_NUM 10    //The start size of the free list
 #define FREE_LIST_MAX 10000  //The max size of the free list
 #define FREE_LIST_INC 10    //The incresment of the free list
@@ -181,8 +181,9 @@ static int recv_cb(ompi_request_t *req){
 }
 
 int mca_coll_adapt_bcast(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    printf("adapt\n");
-    return mca_coll_adapt_bcast_pipeline(buff, count, datatype, root, comm, module);
+    //printf("adapt\n");
+    //return mca_coll_adapt_bcast_pipeline(buff, count, datatype, root, comm, module);
+    return mca_coll_adapt_bcast_topoaware_chain(buff, count, datatype, root, comm, module);
 }
 
 

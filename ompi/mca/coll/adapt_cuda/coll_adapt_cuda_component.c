@@ -15,6 +15,8 @@
 #include "ompi/constants.h"
 #include "ompi/mca/coll/coll.h"
 #include "coll_adapt_cuda.h"
+#include "coll_adapt_cuda_mpool.h"
+#include "coll_adapt_cuda_nccl.h"
 
 
 /*
@@ -236,6 +238,10 @@ static int adapt_cuda_register(void)
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &coll_adapt_cuda_shared_mem_used_data);
+                                           
+    /* init a mpool for pined cpu buffer */
+    cs->pined_cpu_mpool = coll_adapt_cuda_mpool_create();
+    coll_adapt_cuda_nccl_init();
 
     return adapt_cuda_verify_mca_variables();
 }

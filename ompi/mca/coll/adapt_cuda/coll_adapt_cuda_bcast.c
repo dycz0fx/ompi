@@ -13,21 +13,23 @@
 #include "ompi/mca/pml/ob1/pml_ob1.h"       //dump
 #include "opal/datatype/opal_datatype_cuda.h"
 #include "coll_adapt_cuda_mpool.h"
+#include "coll_adapt_cuda_nccl.h"
+#include "opal/mca/common/cuda/common_cuda.h"
 
 #define SEND_NUM 2    //send how many fragments at once
 #define RECV_NUM 3    //receive how many fragments at once
-#define SEG_SIZE 1024*1024*2   //size of a segment
+#define SEG_SIZE 1024*512   //size of a segment
 #define FREE_LIST_NUM 10    //The start size of the free list
 #define FREE_LIST_MAX 10000  //The max size of the free list
 #define FREE_LIST_INC 10    //The incresment of the free list
 #define TEST printfno
 
+int bcast_count = 0;
+ncclComm_t nccl_comm = NULL;
+
 static void printfno(){
     
 }
-
-char *cpu_buff_heap = NULL;
-mca_mpool_base_module_t *cpu_pined_mpool = NULL;
 
 #define TIMER_DATA_TYPE struct timeval
 #define GET_TIME(TV)   gettimeofday( &(TV), NULL )
@@ -70,15 +72,39 @@ static int send_cb(ompi_request_t *req)
             send_count = send_context->con->count - new_id * send_context->con->seg_count;
         }
         
-        if (tree->topo_flags == 0 && tree->tree_next_topo_flags[context->child_id] != 2) {
-            assert(context->con->cpu_buff_list != NULL);
+        if (tree->topo_flags == 0 && tree->tree_prev_topo_flags == -1) {   /* root */
+            if (tree->tree_next_topo_flags[context->child_id] != 2) {
+                assert(context->con->cpu_buff_list != NULL);
+                if (context->con->cpu_buff_memcpy_flags[new_id] == CPU_BUFFER_MEMCPY_NOT_DONE) {
+                    //    ompi_datatype_copy_content_same_ddt(send_context->con->datatype, send_count, context->con->cpu_buff_list + new_id * context->con->real_seg_size, (char*)send_context->buff);
+        //            opal_output(0, "topo 0 root sendcb memcpy\n");
+                    opal_cuda_memcpy_sync(context->con->cpu_buff_list + new_id * context->con->real_seg_size, (char*)send_context->buff, send_count);
+                    context->con->cpu_buff_memcpy_flags[new_id] = CPU_BUFFER_MEMCPY_DONE;
+                }
+                send_buff = context->con->cpu_buff_list + new_id * context->con->real_seg_size;
+            } else {
+                send_buff = send_context->buff;
+            }
+        } else if (tree->topo_flags == 0 && tree->tree_prev_topo_flags == 0) {  /* non-root node leader */
+            if (tree->tree_next_topo_flags[context->child_id] == 2) {
+                assert(context->con->cpu_buff_list != NULL);
+                if (context->con->cpu_buff_memcpy_flags[new_id] == CPU_BUFFER_MEMCPY_NOT_DONE) {
+                    //    ompi_datatype_copy_content_same_ddt(send_context->con->datatype, send_count, context->con->cpu_buff_list + new_id * context->con->real_seg_size, (char*)send_context->buff);
+      //              opal_output(0, "topo 0 0 sendcb memcpy\n");
+                    opal_cuda_memcpy_sync(send_context->buff, context->con->cpu_buff_list + new_id * context->con->real_seg_size, send_count);
+                    context->con->cpu_buff_memcpy_flags[new_id] = CPU_BUFFER_MEMCPY_DONE;
+                }
+                send_buff = send_context->buff;
+            } else {
+                send_buff = context->con->cpu_buff_list + new_id * context->con->real_seg_size;
+            }
+        } else if (tree->topo_flags == 1) {  /* socket leader */
+    //        opal_output(0, "topo 1 sendcb memcpy\n");
             if (context->con->cpu_buff_memcpy_flags[new_id] == CPU_BUFFER_MEMCPY_NOT_DONE) {
-            //    ompi_datatype_copy_content_same_ddt(send_context->con->datatype, send_count, context->con->cpu_buff_list + new_id * context->con->real_seg_size, (char*)send_context->buff);
-                opal_output(0, "sendcb memcpy\n");
-                opal_cuda_memcpy_sync(context->con->cpu_buff_list + new_id * context->con->real_seg_size, (char*)send_context->buff, send_count);
+                opal_cuda_memcpy_sync(send_context->buff, context->con->cpu_buff_list + new_id * context->con->real_seg_size, send_count);
                 context->con->cpu_buff_memcpy_flags[new_id] = CPU_BUFFER_MEMCPY_DONE;
             }
-            send_buff = context->con->cpu_buff_list + new_id * context->con->real_seg_size;
+            send_buff = send_context->buff;
         } else {
             send_buff = send_context->buff;
         }
@@ -153,8 +179,8 @@ static int recv_cb(ompi_request_t *req){
         if (new_id == (recv_context->con->num_segs - 1)) {
             recv_count = recv_context->con->count - new_id * recv_context->con->seg_count;
         }
-        if ((tree->topo_flags == 1 && tree->tree_prev_topo_flags == 0) || (tree->topo_flags == 0 && tree->tree_prev_topo_flags == 0)) {
-            opal_output(0, "recv cb change recv_buff\n");
+        if ((tree->topo_flags == 1 && tree->tree_prev_topo_flags == 0) || (tree->topo_flags == 0 && tree->tree_prev_topo_flags == 0)) { /* node / socket leader */
+       //     opal_output(0, "recvcb change recv_buff\n");
             recv_buff = context->con->cpu_buff_list + new_id * context->con->real_seg_size;
             recv_context->buff_tmp = recv_buff;
         } else {
@@ -188,12 +214,34 @@ static int recv_cb(ompi_request_t *req){
             send_context->con = context->con;
             OBJ_RETAIN(context->con);
             ++(send_context->con->send_array[i]);
-            if ((tree->topo_flags == 1 && tree->tree_prev_topo_flags == 0) || (tree->topo_flags == 0 && tree->tree_prev_topo_flags == 0)) {
-                opal_output(0, "recv cb memcpy\n");
-                opal_cuda_memcpy_sync(send_context->buff, context->buff_tmp, send_count);
+            if ((tree->topo_flags == 1 && tree->tree_prev_topo_flags == 0)) {  /* socket leader */
+        //        opal_output(0, "topo 1 recv cb memcpy\n");
+                assert(context->buff_tmp != NULL);
+                if (context->con->cpu_buff_memcpy_flags[context->frag_id] == CPU_BUFFER_MEMCPY_NOT_DONE) {
+                    opal_cuda_memcpy_sync(context->buff, context->buff_tmp, send_count);
+                    context->con->cpu_buff_memcpy_flags[context->frag_id] = CPU_BUFFER_MEMCPY_DONE;
+                }
+                send_context->buff = context->buff;
+                send_buff = send_context->buff;
+            } else if (tree->topo_flags == 0 && tree->tree_prev_topo_flags == 0) {  /* node leader */
+                assert(context->buff_tmp != NULL);
+                if (tree->tree_next_topo_flags[i] == 2) {
+      //              opal_output(0, "topo 0 recv cb memcpy\n");
+                    if (context->con->cpu_buff_memcpy_flags[context->frag_id] == CPU_BUFFER_MEMCPY_NOT_DONE) {
+                        opal_cuda_memcpy_sync(context->buff, context->buff_tmp, send_count);
+                        context->con->cpu_buff_memcpy_flags[context->frag_id] = CPU_BUFFER_MEMCPY_DONE;
+                    }
+                    send_context->buff = context->buff;
+                    send_buff = send_context->buff;
+                } else {
+    //                opal_output(0, "topo 0 recv cb direct send\n");
+                    send_buff = context->buff_tmp;
+                }
+            } else {
+                send_buff = send_context->buff;
             }
             TEST("[%d]: Send(start in recv cb): segment %d to %d at buff %p send_count %d datatype %p comm %p\n", ompi_comm_rank(send_context->con->comm), send_context->frag_id, send_context->peer, (void *)send_context->buff, send_count, (void *) send_context->con->datatype, (void *) send_context->con->comm);
-            err = MCA_PML_CALL(isend(send_context->buff, send_count, send_context->con->datatype, send_context->peer, send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
+            err = MCA_PML_CALL(isend(send_buff, send_count, send_context->con->datatype, send_context->peer, send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
             
             //invoke send call back
             if(!ompi_request_set_callback(send_req, send_cb, send_context)) {
@@ -229,8 +277,43 @@ static int recv_cb(ompi_request_t *req){
 
 int mca_coll_adapt_cuda_bcast(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     printf("cuda pipeline\n");
-    //return mca_coll_adapt_cuda_bcast_pipeline(buff, count, datatype, root, comm, module);
-    return mca_coll_adapt_cuda_bcast_topoaware_chain(buff, count, datatype, root, comm, module);
+    ncclStream_t stream = (ncclStream_t)mca_common_cuda_get_nccl_stream();
+    if (0&& stream != NULL) {
+        return mca_coll_adapt_cuda_bcast_nccl(buff, count, datatype, root, comm, module);
+    } else {
+        ncclUniqueId commId;
+        int pid = 28987;
+        int cid = 1;
+        int len = snprintf(commId.internal, NCCL_UNIQUE_ID_BYTES, "nccl-%d-%d", pid, cid);
+        int size = ompi_comm_size(comm);
+        int rank = ompi_comm_rank(comm);
+        printf("init nccl comm\n");
+//        coll_adapt_cuda_nccl_comm_init_rank(&nccl_comm, size, commId, rank);
+   // return mca_coll_adapt_cuda_bcast_pipeline(buff, count, datatype, root, comm, module);
+        return mca_coll_adapt_cuda_bcast_topoaware_chain(buff, count, datatype, root, comm, module);
+    }
+}
+
+int mca_coll_adapt_cuda_bcast_nccl(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+    ncclUniqueId commId;
+    int pid = 28987;
+    int cid = 1;
+    int len = snprintf(commId.internal, NCCL_UNIQUE_ID_BYTES, "nccl-%d-%d", pid, cid);
+    int size = ompi_comm_size(comm);
+    int rank = ompi_comm_rank(comm);
+    ncclStream_t stream = (ncclStream_t)mca_common_cuda_get_nccl_stream();
+    if (stream != NULL) {
+        if (nccl_comm == NULL) {
+            printf("init nccl comm late\n");
+            coll_adapt_cuda_nccl_comm_init_rank(&nccl_comm, size, commId, rank);
+        }
+        coll_adapt_cuda_nccl_bcast(buff, count, ncclChar, root, nccl_comm, stream);
+        mca_common_cuda_sync_nccl_stream();
+   // coll_adapt_cuda_nccl_comm_destroy(nccl_comm);
+    } else {
+        printf("skip, stream is not ready\n");
+    }
+    return MPI_SUCCESS;
 }
 
 
@@ -245,6 +328,7 @@ int mca_coll_adapt_cuda_bcast_binomial(void *buff, int count, struct ompi_dataty
         coll_comm->cached_bmtree_root = root;
     }
     //print_tree(coll_comm->cached_bmtree, ompi_comm_rank(comm));
+    coll_comm->cached_bmtree->topo_flags = -1;
     return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_bmtree);
 }
 
@@ -257,6 +341,7 @@ int mca_coll_adapt_cuda_bcast_in_order_binomial(void *buff, int count, struct om
         coll_comm->cached_in_order_bmtree = ompi_coll_base_topo_build_in_order_bmtree(comm, root);
         coll_comm->cached_in_order_bmtree_root = root;
     }
+    coll_comm->cached_in_order_bmtree->topo_flags = -1;
     return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_in_order_bmtree);
 }
 
@@ -269,6 +354,7 @@ int mca_coll_adapt_cuda_bcast_binary(void *buff, int count, struct ompi_datatype
         coll_comm->cached_bintree = ompi_coll_base_topo_build_tree(2, comm, root);
         coll_comm->cached_bintree_root = root;
     }
+    coll_comm->cached_bintree->topo_flags = -1;
     return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_bintree);
 }
 
@@ -281,6 +367,7 @@ int mca_coll_adapt_cuda_bcast_pipeline(void *buff, int count, struct ompi_dataty
         coll_comm->cached_pipeline = ompi_coll_base_topo_build_chain(1, comm, root);
         coll_comm->cached_pipeline_root = root;
     }
+    coll_comm->cached_pipeline->topo_flags = -1;
     return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_pipeline);
 }
 
@@ -293,6 +380,7 @@ int mca_coll_adapt_cuda_bcast_chain(void *buff, int count, struct ompi_datatype_
         coll_comm->cached_chain = ompi_coll_base_topo_build_chain(4, comm, root);
         coll_comm->cached_chain_root = root;
     }
+    coll_comm->cached_chain->topo_flags = -1;
     return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_chain);
 }
 
@@ -305,6 +393,7 @@ int mca_coll_adapt_cuda_bcast_linear(void *buff, int count, struct ompi_datatype
     else{
         tree = ompi_coll_base_topo_build_chain(1, comm, root);
     }
+    tree->topo_flags = -1;
     return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, tree);
 }
 
@@ -444,9 +533,10 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
     int *recv_array = NULL;   //store those segments which are received
     int *send_array = NULL;   //record how many isend has been issued for every child
     
-    char *cpu_buff_list = NULL;  // used to send/receive data into cpu mem, only used for node leader
+    opal_free_list_t *cpu_buff_list = NULL;  // used to send/receive data into cpu mem, only used for node leader
     char *send_buff = NULL;
     char *recv_buff = NULL;
+    mca_mpool_base_module_t *mpool = mca_coll_adapt_cuda_component.pined_cpu_mpool;
     
     //set up free list
     context_list = OBJ_NEW(opal_free_list_t);
@@ -464,6 +554,7 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
     seg_size = SEG_SIZE;
     size = ompi_comm_size(comm);
     rank = ompi_comm_rank(comm);
+    
     
     //Determine number of elements sent per operation
     ompi_datatype_type_size(datatype, &type_size);
@@ -524,6 +615,8 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
     print_topo_level(rank, tree);
     
     if (rank == root){
+        
+        tree->tree_prev_topo_flags = -1;
         //handle the situation when num_segs < SEND_NUM
         if (num_segs <= SEND_NUM) {
             min = num_segs;
@@ -558,17 +651,9 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
                 context->con = con;
                 OBJ_RETAIN(con);
                 
-                if (tree->tree_next_topo_flags[j] != 2) {
-                    if (cpu_buff_heap == NULL) {
-                        //cpu_buff_heap = (char *)malloc(sizeof(char)* real_seg_size * num_segs);
-                        opal_output(0, "malloc heap send\n");
-                        cpu_buff_heap = (char*)opal_cuda_malloc_host(sizeof(char)* real_seg_size * num_segs);
-                        cpu_pined_mpool = coll_adapt_cuda_mpool_create();
-                       // con->cpu_buff_list = cpu_buff_heap;
-                    }
-                    if (con->cpu_buff_memcpy_flags == NULL) {
-                        //con->cpu_buff_list = cpu_buff_heap;
-                        con->cpu_buff_list = cpu_pined_mpool->mpool_alloc(cpu_pined_mpool, sizeof(char)* real_seg_size * num_segs, 0, 0);
+                if (tree->topo_flags != -1 && tree->tree_next_topo_flags[j] != 2) {
+                    if (con->cpu_buff_list == NULL) {
+                        con->cpu_buff_list = mpool->mpool_alloc(mpool, sizeof(char)* real_seg_size * num_segs, 0, 0);
                         assert(con->cpu_buff_list != NULL);
                         con->cpu_buff_memcpy_flags = (int *)malloc(sizeof(int) * num_segs);
                         for (k = 0; k < num_segs; k++) {
@@ -580,14 +665,15 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
                         TIMER_DATA_TYPE tstart, tend;
                         long total_time;
                         GET_TIME(tstart);
-                        opal_output(0, "send root memcpy\n");
+                 //       opal_output(0, "send root memcpy\n");
                         opal_cuda_memcpy_sync(con->cpu_buff_list + i * real_seg_size, (char*)context->buff, send_count);
                         GET_TIME( tend );
                         total_time = ELAPSED_TIME( tstart, tend );
                         printf("memcpy %ld us\n", total_time);
                         con->cpu_buff_memcpy_flags[i] = CPU_BUFFER_MEMCPY_DONE;
                     }
-                    send_buff = con->cpu_buff_list + i * real_seg_size;
+                    context->buff_tmp = con->cpu_buff_list + i * real_seg_size;
+                    send_buff = context->buff_tmp;
                 } else {
                     send_buff = context->buff;
                 }
@@ -653,19 +739,15 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
             OBJ_RETAIN(con);
             
             if ((tree->topo_flags == 1 && tree->tree_prev_topo_flags == 0) || (tree->topo_flags == 0 && tree->tree_prev_topo_flags == 0)) {
-                if (cpu_buff_heap == NULL) {
-                    //cpu_buff_heap = (char *)malloc(sizeof(char)* real_seg_size * num_segs);
-                    opal_output(0, "malloc heap recv\n");
-                    cpu_buff_heap = (char*)opal_cuda_malloc_host(sizeof(char)* real_seg_size * num_segs);
-                    //con->cpu_buff_list = cpu_buff_heap;
-                    cpu_pined_mpool = coll_adapt_cuda_mpool_create();
-                }
                 if (con->cpu_buff_list == NULL) {
-                    //con->cpu_buff_list = cpu_buff_heap;
-                    con->cpu_buff_list = cpu_pined_mpool->mpool_alloc(cpu_pined_mpool, sizeof(char)* real_seg_size * num_segs, 0, 0);
+                    con->cpu_buff_list = mpool->mpool_alloc(mpool, sizeof(char)* real_seg_size * num_segs, 0, 0);
+                    con->cpu_buff_memcpy_flags = (int *)malloc(sizeof(int) * num_segs);
+                    for (k = 0; k < num_segs; k++) {
+                        con->cpu_buff_memcpy_flags[k] = CPU_BUFFER_MEMCPY_NOT_DONE;
+                    }
                 }
                 assert(con->cpu_buff_list != NULL);
-                opal_output(0, "recv change recv buff\n");
+                //opal_output(0, "recv change recv buff\n");
                 recv_buff = con->cpu_buff_list + i * real_seg_size;
                 context->buff_tmp = recv_buff;
             } else {
@@ -701,7 +783,7 @@ int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatyp
         free(con->recv_array);
     }
     if (con->cpu_buff_list != NULL) {
-        cpu_pined_mpool->mpool_free(cpu_pined_mpool, con->cpu_buff_list);
+        mpool->mpool_free(mpool, con->cpu_buff_list);
         con->cpu_buff_list = NULL;
     }
     if (con->cpu_buff_memcpy_flags != NULL) {

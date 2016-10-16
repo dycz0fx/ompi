@@ -14,6 +14,7 @@ dist_ompidata_DATA = help-mpi-coll-adapt-cuda.txt
 sources = \
 	coll_adapt_cuda_component.c \
 	coll_adapt_cuda_module.c \
+	coll_adapt_cuda_nccl.c \
         coll_adapt_cuda_bcast.c \
         coll_adapt_cuda_reduce.c \
         coll_adapt_cuda.h \
