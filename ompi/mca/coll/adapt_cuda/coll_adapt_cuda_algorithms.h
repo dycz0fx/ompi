@@ -27,7 +27,11 @@ int mca_coll_adapt_cuda_bcast_two_trees_binomial(void *buff, int count, struct o
 
 int mca_coll_adapt_cuda_bcast_two_chains(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
 
+int mca_coll_adapt_cuda_bcast_nccl_topo(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t *tree);
+
 int mca_coll_adapt_cuda_bcast_generic(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t *tree);
+
+int mca_coll_adapt_cuda_bcast_generic_cpu(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t *tree);
 
 int mca_coll_adapt_cuda_bcast_two_trees_generic(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t** trees);
 
@@ -79,6 +83,13 @@ int mca_coll_adapt_cuda_reduce_topoaware_linear(const void *sbuf, void *rbuf, in
 int mca_coll_adapt_cuda_reduce_topoaware_chain(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
 
 int mca_coll_adapt_cuda_reduce_chain_pipeline(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t* tree);
+
+int mca_coll_adapt_cuda_reduce_topo_generic( const void* sendbuf, void* recvbuf, int original_count,
+                                    struct ompi_datatype_t* datatype, struct ompi_op_t* op,
+                                    int root, struct ompi_communicator_t* comm,
+                                    mca_coll_base_module_t *module,
+                                    ompi_coll_tree_t* tree, int count_by_segment,
+                                    int max_outstanding_reqs );
 
 int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t* tree);
 

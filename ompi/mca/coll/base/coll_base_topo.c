@@ -29,6 +29,9 @@
 #include "coll_base_topo.h"
 #include "ompi/mca/pml/pml.h"   //for probe
 #include <math.h>
+#include "opal/datatype/opal_convertor.h"
+#include "opal/datatype/opal_datatype_cuda.h"
+#include <string.h>
 
 /*
  * Some static helpers.
@@ -1028,7 +1031,7 @@ int ompi_coll_base_topo_dump_tree (ompi_coll_tree_t* tree, int rank)
 }
 
 //TODO: Need to change int to bits
-#define TOPO_LEVEL 3    //topo aware level
+#define TOPO_LEVEL 4    //topo aware level
 void get_topo(int *topo, struct ompi_communicator_t* comm){
     int r_rank, i;
     int size = ompi_comm_size(comm);
@@ -1059,6 +1062,8 @@ void get_topo(int *topo, struct ompi_communicator_t* comm){
 
     //set core id
     self_topo[2] = ompi_comm_rank(comm);
+    // duplicate level
+    self_topo[3] = ompi_comm_rank(comm);
     
     printf("[topo %d]: %d %d %d\n", ompi_comm_rank(comm), self_topo[0], self_topo[1], self_topo[2]);
 
@@ -1135,22 +1140,94 @@ void get_topo(int *topo, struct ompi_communicator_t* comm){
 
 }
 
+/* check if r_rank is in the same gpu socket of my_rank */
+static int rank_on_current_gpu_numa(int r_rank, int my_rank, int *topo, int size, int topo_level) {
+    int i;
+    int rank_level = topo_level - 1;
+    int numa_level = 1;
+    int my_rank_numa;
+    int r_rank_numa;
+    for (i = 0; i < size; i++) {
+        if (topo[i*topo_level + rank_level] == my_rank) {
+            my_rank_numa = topo[i*topo_level + numa_level];
+        }
+        if (topo[i*topo_level + rank_level] == r_rank) {
+            r_rank_numa = topo[i*topo_level + numa_level];
+        }
+    }
+    if (my_rank_numa == r_rank_numa) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 void get_topo_gpu(int *topo, struct ompi_communicator_t* comm){
-    int r_rank, i, my_rank;
+    int r_rank, i, j, my_rank;
     int size = ompi_comm_size(comm);
-    ompi_proc_t* proc;
     int * self_topo = (int *)malloc(sizeof(int) * TOPO_LEVEL);
     int * same_numa = (int *)malloc(sizeof(int) * size);
     for (i=0; i<size; i++) {
         same_numa[i] = size;
     }
+    
     int same_numa_count = 0;
     //set daemon vpid
     self_topo[0] = OMPI_RTE_MY_NODEID;
-    //set numa id
+
+    my_rank = ompi_comm_rank(comm);
+    
+    // if (my_rank > 15) {
+    //     self_topo[1] = 16;
+    // } else if (my_rank > 11 && my_rank < 16) {
+    //     self_topo[1] = 12;
+    // } else if (my_rank > 9 && my_rank < 12) {
+    //     self_topo[1] = 10;
+    // } else if (my_rank > 5 && my_rank < 10) {
+    //     self_topo[1] = 6;
+    // } else if (my_rank > 3 && my_rank < 6) {
+    //     self_topo[1] = 4;
+    // } else {
+    //     self_topo[1] = 0;
+    // }
+
+    // if (my_rank > 5 && my_rank < 12) {
+    //     self_topo[0] = 1;
+    // } else if (my_rank > 11) {
+    //     self_topo[0] = 2;
+    // }
+
+    int device_id;
+    opal_cuda_get_device(&device_id);
+    int nb_gpus = 0;
+    opal_cuda_get_device_count(&nb_gpus);
+    int *gpu_numa = (int *)malloc(sizeof(int) * nb_gpus * 2);
+    for (i = 0; i < nb_gpus; i++) {
+        gpu_numa[i] = i;
+    }
+    int start_gpu = 0;
+    gpu_numa[nb_gpus + start_gpu] = 0;
+    for (i = 1; i < nb_gpus; i++) {
+        if (opal_cuda_device_can_peer_access(start_gpu, i)) {
+            gpu_numa[nb_gpus + i] = gpu_numa[nb_gpus + start_gpu];
+        } else {
+            gpu_numa[nb_gpus + i] = gpu_numa[nb_gpus + start_gpu] + 1;
+            start_gpu = i;
+        }
+    }
+    
+    //set gpu socket id
+    self_topo[1] = self_topo[0] * 10 + gpu_numa[nb_gpus + device_id];
+    //set gpu id
+    self_topo[2] = device_id + self_topo[0] * 10;
+    //set rank
+    self_topo[3] = my_rank;
+
+    //do allgather
+    comm->c_coll.coll_allgather(self_topo, TOPO_LEVEL, MPI_INT, topo, TOPO_LEVEL, MPI_INT, comm, comm->c_coll.coll_allgather_module);
+    
     for (r_rank=0; r_rank < size; r_rank++) {
-        proc = ompi_group_peer_lookup(comm->c_local_group, r_rank);
-        if (OPAL_PROC_ON_LOCAL_NUMA(proc->super.proc_flags)) {
+        if (rank_on_current_gpu_numa(r_rank, my_rank, topo, size, TOPO_LEVEL)) {
             same_numa[same_numa_count] = r_rank;
             same_numa_count++;
         }
@@ -1162,34 +1239,31 @@ void get_topo_gpu(int *topo, struct ompi_communicator_t* comm){
         }
     }
     
-    my_rank = ompi_comm_rank(comm);
-    if (my_rank > 15) {
-        self_topo[1] = 16;
-    } else if (my_rank > 11 && my_rank < 16) {
-        self_topo[1] = 12;  
-    } else if (my_rank > 9 && my_rank < 12) {
-        self_topo[1] = 10;
-    } else if (my_rank > 5 && my_rank < 10) {
-        self_topo[1] = 6;
-    } else if (my_rank > 3 && my_rank < 6) {
-        self_topo[1] = 4;    
-    } else {
-        self_topo[1] = 0;
-    }
+    self_topo[1] = min;
     
-    if (my_rank > 5 && my_rank < 12) {
-        self_topo[0] = 1;
-    } else if (my_rank > 11) {
-        self_topo[0] = 2;
-    }
-
-    //set core id
-    self_topo[2] = my_rank;
+//    printf("[topo %d]: %d %d %d\n", ompi_comm_rank(comm), self_topo[0], self_topo[1], self_topo[2], self_topo[3]);
     
-    printf("[topo %d]: %d %d %d\n", ompi_comm_rank(comm), self_topo[0], self_topo[1], self_topo[2]);
-
-    //do allgather
     comm->c_coll.coll_allgather(self_topo, TOPO_LEVEL, MPI_INT, topo, TOPO_LEVEL, MPI_INT, comm, comm->c_coll.coll_allgather_module);
+    
+    int *topo_bak = (int *)malloc(sizeof(int)*size*TOPO_LEVEL);
+    memcpy(topo_bak, topo, sizeof(int)*size*TOPO_LEVEL);
+    int max, max_index;
+    for (j = 0; j < size; j++) {
+        max_index = 0;
+        max = topo_bak[2];
+        for (i = 0; i < size; i++) {
+            if (topo_bak[i*TOPO_LEVEL + 2] != -1 && topo_bak[i*TOPO_LEVEL + 2] > max) {
+                max = topo_bak[i*TOPO_LEVEL + 2];
+                max_index = i;
+            }
+        }
+        topo[max_index * TOPO_LEVEL + 2] = size-j-1;
+        topo_bak[max_index * TOPO_LEVEL + 2] = -1;
+    }
+    
+    printf("[topo %d]: %d %d %d %d, real device %d\n", ompi_comm_rank(comm), topo[my_rank * TOPO_LEVEL], topo[my_rank * TOPO_LEVEL + 1], topo[my_rank * TOPO_LEVEL + 2], topo[my_rank * TOPO_LEVEL + 3], device_id);
+    
+    free(topo_bak);
     free(same_numa);
     free(self_topo);
 }

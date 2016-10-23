@@ -262,6 +262,9 @@ int32_t opal_cuda_kernel_support_init(void)
         OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_ddt_cuda_event_record );
         OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_recude_op_sum_double );
         OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_ddt_cuda_malloc_host );
+        OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_ddt_cuda_get_device );
+        OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_ddt_cuda_get_device_count );
+        OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_ddt_cuda_device_can_peer_access );
         
         if (OPAL_SUCCESS != cuda_kernel_table.opal_ddt_cuda_kernel_init_p()) {
             return OPAL_ERROR;
@@ -302,6 +305,9 @@ int32_t opal_cuda_kernel_support_fini(void)
         cuda_kernel_table.opal_ddt_cuda_event_record_p = NULL;
         cuda_kernel_table.opal_recude_op_sum_double_p = NULL;
         cuda_kernel_table.opal_ddt_cuda_malloc_host_p = NULL;
+        cuda_kernel_table.opal_ddt_cuda_get_device_p = NULL;
+        cuda_kernel_table.opal_ddt_cuda_get_device_count_p = NULL;
+        cuda_kernel_table.opal_ddt_cuda_device_can_peer_access_p = NULL;
 
         dlclose(opal_datatype_cuda_kernel_handle);
         opal_datatype_cuda_kernel_handle = NULL;
@@ -541,5 +547,37 @@ void* opal_cuda_malloc_host(size_t size)
     } else {
         opal_output(0, "opal_ddt_cuda_malloc_host function pointer is NULL\n");
         return NULL;
+    }
+}
+
+void opal_cuda_get_device(int *device)
+{
+    if (cuda_kernel_table.opal_ddt_cuda_get_device_p != NULL) {
+        cuda_kernel_table.opal_ddt_cuda_get_device_p(device);
+        return;
+    } else {
+        opal_output(0, "opal_ddt_cuda_get_device function pointer is NULL\n");
+        return;
+    }
+}
+
+void opal_cuda_get_device_count(int *nb_gpus)
+{
+    if (cuda_kernel_table.opal_ddt_cuda_get_device_count_p != NULL) {
+        cuda_kernel_table.opal_ddt_cuda_get_device_count_p(nb_gpus);
+        return;
+    } else {
+        opal_output(0, "opal_ddt_cuda_get_device_count function pointer is NULL\n");
+        return;
+    }
+}
+
+int32_t opal_cuda_device_can_peer_access(int device, int peer_device)
+{
+    if (cuda_kernel_table.opal_ddt_cuda_device_can_peer_access_p != NULL) {
+        return cuda_kernel_table.opal_ddt_cuda_device_can_peer_access_p(device, peer_device);
+    } else {
+        opal_output(0, "opal_ddt_cuda_device_can_peer_access function pointer is NULL\n");
+        return -1;
     }
 }

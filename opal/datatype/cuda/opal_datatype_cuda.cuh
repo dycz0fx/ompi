@@ -152,6 +152,12 @@ int32_t opal_ddt_cuda_event_record(void *cuda_event_list, int32_t i);
 int32_t opal_recude_op_sum_double(void *source, void *target, int count, void *cublas_outer_stream);
 
 void *opal_ddt_cuda_malloc_host(size_t size);
+
+void opal_ddt_cuda_get_device(int *device);
+
+void opal_ddt_cuda_get_device_count(int *nb_gpus);
+
+int32_t opal_ddt_cuda_device_can_peer_access(int device, int peer_access);
 }
                             
 #endif  /* OPAL_DATATYPE_CUDA_H_HAS_BEEN_INCLUDED */

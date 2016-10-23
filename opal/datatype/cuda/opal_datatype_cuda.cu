@@ -749,3 +749,22 @@ void *opal_ddt_cuda_malloc_host(size_t size)
     cudaMallocHost((void **)&ptr, size);
     return ptr;
 }
+
+void opal_ddt_cuda_get_device(int *device)
+{
+    cudaGetDevice(device);
+    return;
+}
+
+void opal_ddt_cuda_get_device_count(int *nb_gpus)
+{
+    cudaGetDeviceCount(nb_gpus);
+    return;
+}
+
+int32_t opal_ddt_cuda_device_can_peer_access(int device, int peer_access)
+{
+    int access = 0;
+    cudaDeviceCanAccessPeer(&access, device, peer_access);
+    return access;
+}

@@ -46,7 +46,10 @@ struct opal_datatype_cuda_kernel_function_table {
     int32_t (*opal_ddt_generic_simple_unpack_function_cuda_iov_p)( opal_convertor_t* pConvertor, struct iovec* iov, uint32_t* out_size, size_t* max_data );
     int32_t (*opal_ddt_generic_simple_pack_function_cuda_vector_p)( opal_convertor_t* pConvertor, struct iovec* iov, uint32_t* out_size, size_t* max_data );
     int32_t (*opal_ddt_generic_simple_unpack_function_cuda_vector_p)( opal_convertor_t* pConvertor, struct iovec* iov, uint32_t* out_size, size_t* max_data );
-    void* (*opal_ddt_cuda_malloc_host_p)(size_t size);                                                         
+    void* (*opal_ddt_cuda_malloc_host_p)(size_t size);    
+    void (*opal_ddt_cuda_get_device_p)(int *device);
+    void (*opal_ddt_cuda_get_device_count_p)(int *nb_gpus);
+    int32_t (*opal_ddt_cuda_device_can_peer_access_p)(int device, int peer_device);                                                      
 };
 typedef struct opal_datatype_cuda_kernel_function_table opal_datatype_cuda_kernel_function_table_t;
 extern int32_t opal_datatype_cuda_kernel_support;
@@ -87,4 +90,7 @@ int32_t opal_cuda_event_sync(void *cuda_event_list, int32_t i);
 int32_t opal_cuda_event_record(void *cuda_event_list, int32_t i);
 int32_t opal_cuda_recude_op_sum_double(void *source, void *target, int count, void *cublas_outer_stream);
 void *opal_cuda_malloc_host(size_t size);
+void opal_cuda_get_device(int *device);
+void opal_cuda_get_device_count(int *nb_gpus);
+int32_t opal_cuda_device_can_peer_access(int device, int peer_device);
 #endif
