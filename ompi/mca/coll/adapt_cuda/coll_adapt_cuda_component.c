@@ -17,6 +17,7 @@
 #include "coll_adapt_cuda.h"
 #include "coll_adapt_cuda_mpool.h"
 #include "coll_adapt_cuda_nccl.h"
+#include "coll_adapt_cuda_algorithms.h"
 
 
 /*
@@ -29,6 +30,8 @@ const char *mca_coll_adapt_cuda_component_version_string =
 /*
  * Local functions
  */
+static int coll_adapt_cuda_progress();
+static int adapt_cuda_open(void);
 static int adapt_cuda_close(void);
 static int adapt_cuda_register(void);
 
@@ -57,7 +60,7 @@ mca_coll_adapt_cuda_component_t mca_coll_adapt_cuda_component = {
             OMPI_RELEASE_VERSION,
 
             /* Component functions */
-            NULL, /* open */
+            adapt_cuda_open, /* open */
             adapt_cuda_close,
             NULL, /* query */
             adapt_cuda_register
@@ -104,6 +107,18 @@ mca_coll_adapt_cuda_component_t mca_coll_adapt_cuda_component = {
     /* Not specifying values here gives us all 0's */
 };
 
+/* open the component */
+static int adapt_cuda_open(void)
+{
+    int rc;
+    rc = opal_progress_register(coll_adapt_cuda_progress);
+    if (OMPI_SUCCESS != rc ) {
+        fprintf(stderr," failed to register the ml progress function \n");
+        fflush(stderr);
+        return rc;
+    }
+    return OMPI_SUCCESS;
+}
 
 /*
  * Shut down the component
@@ -241,7 +256,12 @@ static int adapt_cuda_register(void)
                                            
     /* init a mpool for pined cpu buffer */
     cs->pined_cpu_mpool = coll_adapt_cuda_mpool_create();
-    coll_adapt_cuda_nccl_init();
 
     return adapt_cuda_verify_mca_variables();
+}
+
+static int coll_adapt_cuda_progress()
+{
+    coll_adapt_cuda_bcast_progress();
+    return OMPI_SUCCESS;
 }

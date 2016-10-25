@@ -122,6 +122,7 @@ int mca_coll_adapt_cuda_alltoallv(const void *sbuf, const int *scounts, const in
 
 int mca_coll_adapt_cuda_ialltoallv(const void *sbuf, const int *scounts, const int *sdisps, struct ompi_datatype_t *sdtype, void* rbuf, const int *rcounts, const int *rdisps, struct ompi_datatype_t *rdtype, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module);
 
+int coll_adapt_cuda_bcast_progress();
 //get thread id for test
 static inline uint64_t gettid(void) {
     pthread_t ptid = pthread_self();

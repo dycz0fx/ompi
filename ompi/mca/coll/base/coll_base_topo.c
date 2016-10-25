@@ -1176,26 +1176,6 @@ void get_topo_gpu(int *topo, struct ompi_communicator_t* comm){
     self_topo[0] = OMPI_RTE_MY_NODEID;
 
     my_rank = ompi_comm_rank(comm);
-    
-    // if (my_rank > 15) {
-    //     self_topo[1] = 16;
-    // } else if (my_rank > 11 && my_rank < 16) {
-    //     self_topo[1] = 12;
-    // } else if (my_rank > 9 && my_rank < 12) {
-    //     self_topo[1] = 10;
-    // } else if (my_rank > 5 && my_rank < 10) {
-    //     self_topo[1] = 6;
-    // } else if (my_rank > 3 && my_rank < 6) {
-    //     self_topo[1] = 4;
-    // } else {
-    //     self_topo[1] = 0;
-    // }
-
-    // if (my_rank > 5 && my_rank < 12) {
-    //     self_topo[0] = 1;
-    // } else if (my_rank > 11) {
-    //     self_topo[0] = 2;
-    // }
 
     int device_id;
     opal_cuda_get_device(&device_id);
@@ -1220,6 +1200,7 @@ void get_topo_gpu(int *topo, struct ompi_communicator_t* comm){
     self_topo[1] = self_topo[0] * 10 + gpu_numa[nb_gpus + device_id];
     //set gpu id
     self_topo[2] = device_id + self_topo[0] * 10;
+  //  self_topo[2] = my_rank;
     //set rank
     self_topo[3] = my_rank;
 
@@ -1260,10 +1241,10 @@ void get_topo_gpu(int *topo, struct ompi_communicator_t* comm){
         topo[max_index * TOPO_LEVEL + 2] = size-j-1;
         topo_bak[max_index * TOPO_LEVEL + 2] = -1;
     }
+    free(topo_bak);
     
     printf("[topo %d]: %d %d %d %d, real device %d\n", ompi_comm_rank(comm), topo[my_rank * TOPO_LEVEL], topo[my_rank * TOPO_LEVEL + 1], topo[my_rank * TOPO_LEVEL + 2], topo[my_rank * TOPO_LEVEL + 3], device_id);
     
-    free(topo_bak);
     free(same_numa);
     free(self_topo);
 }

@@ -27,6 +27,8 @@
 int bcast_count = 0;
 ncclComm_t nccl_comm = NULL;
 
+int coll_adapt_cuda_bcast_use_sync = 0;
+
 static void printfno(){
     
 }
@@ -381,9 +383,18 @@ static int recv_cb_cpu(ompi_request_t *req){
             } else if (tree->topo_flags == 0 && tree->tree_prev_topo_flags == 0) {  /* node leader */
                 assert(context->buff_tmp != NULL);
                 if (tree->tree_next_topo_flags[i] == 2) {
-                          opal_output(0, "topo 0 recv cb memcpy\n");
+            //              opal_output(0, "topo 0 recv cb memcpy\n");
                     if (context->con->cpu_buff_memcpy_flags[context->frag_id] == CPU_BUFFER_MEMCPY_NOT_DONE) {
-                        opal_cuda_memcpy_sync(context->buff, context->buff_tmp, send_count);
+                        if (coll_adapt_cuda_bcast_use_sync) {
+                            opal_cuda_memcpy_sync(context->buff, context->buff_tmp, send_count);
+                        } else {
+                            mca_common_cuda_memcpy_async(context->buff, context->buff_tmp, send_count);
+                            send_context->send_count = send_count;
+                            send_context->buff = context->buff;
+                            mca_common_cuda_record_memcpy_event("memcpy in coll_adapt_cuda_bcast", (void *)send_context);
+                          //  opal_output(0, "topo 0 recv cb record event\n");
+                            continue;
+                        }
                         context->con->cpu_buff_memcpy_flags[context->frag_id] = CPU_BUFFER_MEMCPY_DONE;
                     }
                     send_context->buff = context->buff;
@@ -611,7 +622,7 @@ int mca_coll_adapt_cuda_bcast_topoaware_chain(void *buff, int count, struct ompi
     else {
     }
     //print_tree(coll_comm->cached_topochain, ompi_comm_rank(comm));
-     return mca_coll_adapt_cuda_bcast_generic_cpu(buff, count, datatype, root, comm, module, coll_comm->cached_topochain);
+    return mca_coll_adapt_cuda_bcast_generic_cpu(buff, count, datatype, root, comm, module, coll_comm->cached_topochain);
     //return mca_coll_adapt_cuda_bcast_generic(buff, count, datatype, root, comm, module, coll_comm->cached_topochain);
 }
 
@@ -1961,4 +1972,29 @@ int mca_coll_adapt_cuda_bcast_two_trees_generic(void *buff, int count, struct om
     free(context_lists);
     return MPI_SUCCESS;
 }
+
+static void bcast_send_context_callback(mca_coll_adapt_cuda_bcast_context_t *send_context)
+{
+    ompi_request_t *send_req;
+  //  printf("progress bcast context %p\n", send_context);
+    send_context->con->cpu_buff_memcpy_flags[send_context->frag_id] = CPU_BUFFER_MEMCPY_DONE;
+    int err = MCA_PML_CALL(isend(send_context->buff, send_context->send_count, send_context->con->datatype, send_context->peer, send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
+    if(!ompi_request_set_callback(send_req, send_cb_cpu, send_context)) {
+        send_cb_cpu(send_req);
+    }
+}
+
+int coll_adapt_cuda_bcast_progress()
+{
+ //   printf("i am in adapt cuda progress\n");
+    mca_coll_adapt_cuda_bcast_context_t *send_context;
+    while (1 == progress_one_cuda_memcpy_event((void **)&send_context)) {
+        if (send_context != NULL) {
+            bcast_send_context_callback(send_context);
+         //   free (pack_callback_frag);
+        }
+    }
+    return OMPI_SUCCESS;
+}
+
 

@@ -44,6 +44,7 @@ struct mca_coll_adapt_cuda_bcast_context_s {
     int frag_id;
     int child_id;
     int peer;
+    size_t send_count;
     mca_coll_adapt_cuda_constant_bcast_context_t * con;
 };
 
