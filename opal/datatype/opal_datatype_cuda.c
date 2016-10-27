@@ -265,6 +265,7 @@ int32_t opal_cuda_kernel_support_init(void)
         OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_ddt_cuda_get_device );
         OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_ddt_cuda_get_device_count );
         OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_ddt_cuda_device_can_peer_access );
+        OPAL_DATATYPE_FIND_CUDA_KERNEL_FUNCTION_OR_RETURN( opal_datatype_cuda_kernel_handle, opal_ddt_cuda_is_gpu_buffer );
         
         if (OPAL_SUCCESS != cuda_kernel_table.opal_ddt_cuda_kernel_init_p()) {
             return OPAL_ERROR;
@@ -308,6 +309,7 @@ int32_t opal_cuda_kernel_support_fini(void)
         cuda_kernel_table.opal_ddt_cuda_get_device_p = NULL;
         cuda_kernel_table.opal_ddt_cuda_get_device_count_p = NULL;
         cuda_kernel_table.opal_ddt_cuda_device_can_peer_access_p = NULL;
+        cuda_kernel_table.opal_ddt_cuda_is_gpu_buffer_p = NULL;
 
         dlclose(opal_datatype_cuda_kernel_handle);
         opal_datatype_cuda_kernel_handle = NULL;
@@ -578,6 +580,16 @@ int32_t opal_cuda_device_can_peer_access(int device, int peer_device)
         return cuda_kernel_table.opal_ddt_cuda_device_can_peer_access_p(device, peer_device);
     } else {
         opal_output(0, "opal_ddt_cuda_device_can_peer_access function pointer is NULL\n");
+        return -1;
+    }
+}
+
+int32_t opal_cuda_is_gpu_buffer(const void* ptr)
+{
+    if (cuda_kernel_table.opal_ddt_cuda_is_gpu_buffer_p != NULL) {
+        return cuda_kernel_table.opal_ddt_cuda_is_gpu_buffer_p(ptr);
+    } else {
+        opal_output(0, "opal_ddt_cuda_is_gpu_buffer function pointer is NULL\n");
         return -1;
     }
 }

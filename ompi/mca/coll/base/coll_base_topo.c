@@ -1391,7 +1391,7 @@ void set_helper(ompi_coll_topo_helper_t *helper, int32_t *rank_topo_array, int *
         }
         for (j=0; j<count; j++) {
             helper[i].start_loc[j] = temp[j];
-            rank = to_rank(helper[i].start_loc[j], ranks_a, size);
+            rank = to_rank(helper[i].start_loc[j], ranks_s, size);
             if (rank_topo_array[rank] > i) {
                 rank_topo_array[rank] = i;
             }
@@ -1656,7 +1656,9 @@ ompi_coll_base_topo_build_topoaware_chain(struct ompi_communicator_t* comm, int 
     int new_tail = -1;
     int rank_loc = -1;
     
-    tree->topo_flags = rank_topo_array[rank];
+    printf("rank %d, vrank %d\n", rank, vrank);
+    
+    tree->topo_flags = rank_topo_array[vrank];
     
     for (i=0; i<TOPO_LEVEL; i++) {
         //count how many groups on this level between head and tail
@@ -1729,24 +1731,29 @@ void build_topoaware_chain(int count, int *start_loc, int rank, int rank_loc, in
         return;
     }
     else {
+        int vrank;
         if (rank_loc == 0) {
             tree->tree_next[tree->tree_nextsize] = to_rank(to_rank(start_loc[rank_loc+1], ranks_s, size), ranks_a, size);
-            tree->tree_next_topo_flags[tree->tree_nextsize] = rank_topo_array[tree->tree_next[tree->tree_nextsize]];
+            vrank = to_vrank(to_vrank(tree->tree_next[tree->tree_nextsize], ranks_a, size), ranks_s, size);
+            tree->tree_next_topo_flags[tree->tree_nextsize] = rank_topo_array[vrank];
             tree->tree_nextsize+=1;
             //printf("[rank %d]: set next %d\n", rank, tree->tree_next[tree->tree_nextsize-1]);
         }
         else if (rank_loc == count - 1) {
             tree->tree_prev = to_rank(to_rank(start_loc[rank_loc-1], ranks_s, size), ranks_a, size);
-            tree->tree_prev_topo_flags = rank_topo_array[tree->tree_prev];
+            vrank = to_vrank(to_vrank(tree->tree_prev, ranks_a, size), ranks_s, size);
+            tree->tree_prev_topo_flags = rank_topo_array[vrank];
             //printf("[rank %d]: set prev %d\n", rank, tree->tree_prev);
         }
         else {
             tree->tree_next[tree->tree_nextsize] = to_rank(to_rank(start_loc[rank_loc+1], ranks_s, size), ranks_a, size);
-            tree->tree_next_topo_flags[tree->tree_nextsize] = rank_topo_array[tree->tree_next[tree->tree_nextsize]];
+            vrank = to_vrank(to_vrank(tree->tree_next[tree->tree_nextsize], ranks_a, size), ranks_s, size);
+            tree->tree_next_topo_flags[tree->tree_nextsize] = rank_topo_array[vrank];
             tree->tree_nextsize+=1;
             //printf("[rank %d]: set next %d\n", rank, tree->tree_next[tree->tree_nextsize-1]);
             tree->tree_prev = to_rank(to_rank(start_loc[rank_loc-1], ranks_s, size), ranks_a, size);
-            tree->tree_prev_topo_flags = rank_topo_array[tree->tree_prev];
+            vrank = to_vrank(to_vrank(tree->tree_prev, ranks_a, size), ranks_s, size);
+            tree->tree_prev_topo_flags = rank_topo_array[vrank];
             //printf("[rank %d]: set prev %d\n", rank, tree->tree_prev);
         }
     }

@@ -2187,6 +2187,15 @@ int mca_common_cuda_memcpy_async(void *dest, const void *src, size_t size)
     }
 }
 
+int mca_common_cuda_is_stage_three_init()
+{
+    if (true == stage_three_init_complete) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 #if OPAL_CUDA_GDR_SUPPORT
 /* Check to see if the memory was freed between the time it was stored in
  * the registration cache and now.  Return true if the memory was previously

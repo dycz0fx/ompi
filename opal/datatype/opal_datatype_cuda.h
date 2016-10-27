@@ -49,7 +49,8 @@ struct opal_datatype_cuda_kernel_function_table {
     void* (*opal_ddt_cuda_malloc_host_p)(size_t size);    
     void (*opal_ddt_cuda_get_device_p)(int *device);
     void (*opal_ddt_cuda_get_device_count_p)(int *nb_gpus);
-    int32_t (*opal_ddt_cuda_device_can_peer_access_p)(int device, int peer_device);                                                      
+    int32_t (*opal_ddt_cuda_device_can_peer_access_p)(int device, int peer_device);   
+    int32_t (*opal_ddt_cuda_is_gpu_buffer_p)(const void *ptr);                                                   
 };
 typedef struct opal_datatype_cuda_kernel_function_table opal_datatype_cuda_kernel_function_table_t;
 extern int32_t opal_datatype_cuda_kernel_support;
@@ -93,4 +94,5 @@ void *opal_cuda_malloc_host(size_t size);
 void opal_cuda_get_device(int *device);
 void opal_cuda_get_device_count(int *nb_gpus);
 int32_t opal_cuda_device_can_peer_access(int device, int peer_device);
+int32_t opal_cuda_is_gpu_buffer(const void* ptr);
 #endif
