@@ -461,11 +461,12 @@ static int recv_cb_cpu(ompi_request_t *req){
 }
 
 int mca_coll_adapt_cuda_bcast(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    printf("cuda pipeline\n");
   //  ncclStream_t stream = (ncclStream_t)mca_common_cuda_get_nccl_stream();
     if (opal_datatype_cuda_kernel_support == 0 || mca_common_cuda_is_stage_three_init() == 0) {
+        printf("cuda pipeline\n");
         return mca_coll_adapt_cuda_bcast_pipeline(buff, count, datatype, root, comm, module);
     } else {
+       // return mca_coll_adapt_cuda_bcast_pipeline(buff, count, datatype, root, comm, module);
         ncclUniqueId commId;
         int pid = 28987;
         int cid = 1;
@@ -1281,6 +1282,7 @@ int mca_coll_adapt_cuda_bcast_generic_cpu(void *buff, int count, struct ompi_dat
     char *recv_buff = NULL;
     mca_mpool_base_module_t *mpool = mca_coll_adapt_cuda_component.pined_cpu_mpool;
     
+    
     //set up free list
     context_list = OBJ_NEW(opal_free_list_t);
     opal_free_list_init(context_list,
@@ -1297,6 +1299,7 @@ int mca_coll_adapt_cuda_bcast_generic_cpu(void *buff, int count, struct ompi_dat
     seg_size = SEG_SIZE;
     size = ompi_comm_size(comm);
     rank = ompi_comm_rank(comm);
+    if (rank == root)  printf("cuda topo chain cpu\n");
     
     
     //Determine number of elements sent per operation

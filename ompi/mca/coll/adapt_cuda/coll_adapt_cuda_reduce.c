@@ -3,6 +3,7 @@
 #include "coll_adapt_cuda_algorithms.h"
 #include "coll_adapt_cuda_context.h"
 #include "coll_adapt_cuda_item.h"
+#include "coll_adapt_cuda.h"
 #include "mpi.h"
 #include "ompi/constants.h"
 #include "ompi/mca/coll/coll.h"
@@ -11,6 +12,7 @@
 #include "ompi/mca/coll/base/coll_base_functions.h"     //COLL_BASE_COMPUTED_SEGCOUNT
 #include "ompi/mca/coll/base/coll_base_topo.h"  //build tree
 #include "opal/datatype/opal_datatype_cuda.h"
+#include "coll_adapt_cuda_mpool.h"
 
 #define SEND_NUM 2    //send how many fragments at once
 #define RECV_NUM 3    //receive how many fragments at once
@@ -367,7 +369,8 @@ int mca_coll_adapt_cuda_reduce_topoaware_chain(const void *sbuf, void *rbuf, int
     size_t typelng;
     ompi_datatype_type_size( dtype, &typelng );
     COLL_BASE_COMPUTED_SEGCOUNT( SEG_SIZE, typelng, segcount );
-    int r = mca_coll_adapt_cuda_reduce_topo_generic(sbuf, rbuf, count, dtype, op, root, comm, module, coll_comm->cached_topochain, segcount, 0);
+   // int r = mca_coll_adapt_cuda_reduce_topo_generic(sbuf, rbuf, count, dtype, op, root, comm, module, coll_comm->cached_topochain, segcount, 0);
+    int r = mca_coll_adapt_cuda_reduce_topo_generic_cpu(sbuf, rbuf, count, dtype, op, root, comm, module, coll_comm->cached_topochain, segcount, 0);
   //  ompi_coll_base_topo_destroy_tree(&tree);
     return r;
 }
@@ -661,6 +664,387 @@ int mca_coll_adapt_cuda_reduce_topo_generic( const void* sendbuf, void* recvbuf,
     }
     return ret;
 }
+
+static int print_topo_level(int rank, ompi_coll_tree_t* tree)
+{
+    printf("rank %d, pid %d, topo_level %d, parent [%d topo %d], nb child %d, ", rank, getpid(), tree->topo_flags, tree->tree_prev, tree->tree_prev_topo_flags, tree->tree_nextsize);
+    int i;
+    for (i=0; i<tree->tree_nextsize; i++) {
+        printf("child [%d, topo %d], ", tree->tree_next[i], tree->tree_next_topo_flags[i]);
+    }
+    printf("\n");
+    return 0;
+}
+
+int mca_coll_adapt_cuda_reduce_topo_generic_cpu( const void* sendbuf, void* recvbuf, int original_count,
+                                    struct ompi_datatype_t* datatype, struct ompi_op_t* op,
+                                    int root, struct ompi_communicator_t* comm,
+                                    mca_coll_base_module_t *module,
+                                    ompi_coll_tree_t* tree, int count_by_segment,
+                                    int max_outstanding_reqs )
+{
+    char *inbuf[2] = {NULL, NULL}, *inbuf_free[2] = {NULL, NULL};
+    char *accumbuf = NULL, *accumbuf_free = NULL;
+    char *local_op_buffer = NULL, *sendtmpbuf = NULL;
+    ptrdiff_t extent, size, gap, segment_increment;
+    ompi_request_t **sreq = NULL, *reqs[2] = {MPI_REQUEST_NULL, MPI_REQUEST_NULL};
+    int num_segments, line, ret, segindex, i, rank;
+    int recvcount, prevcount, inbi;
+
+    /**
+     * Determine number of segments and number of elements
+     * sent per operation
+     */
+    ompi_datatype_type_extent( datatype, &extent );
+    num_segments = (int)(((size_t)original_count + (size_t)count_by_segment - (size_t)1) / (size_t)count_by_segment);
+    segment_increment = (ptrdiff_t)count_by_segment * extent;
+
+    sendtmpbuf = (char*) sendbuf;
+    if( sendbuf == MPI_IN_PLACE ) {
+        sendtmpbuf = (char *)recvbuf;
+    }
+
+    OPAL_OUTPUT((ompi_coll_base_framework.framework_output, "coll:base:reduce_generic count %d, msg size %ld, segsize %ld, max_requests %d",
+                 original_count, (unsigned long)((ptrdiff_t)num_segments * (ptrdiff_t)segment_increment),
+                 (unsigned long)segment_increment, max_outstanding_reqs));
+
+    rank = ompi_comm_rank(comm);
+    
+    char *cpu_buff[2] = {NULL, NULL}, *cpu_buff_free[2] = {NULL, NULL};
+    char *gpu_buff[2] = {NULL, NULL};
+    char *local_send_buff_tmp = NULL;
+    char *local_recv_buff_tmp = NULL;
+    size_t type_size;
+    ompi_datatype_type_size(datatype, &type_size);
+    mca_mpool_base_module_t *mpool = mca_coll_adapt_cuda_component.pined_cpu_mpool;
+    ptrdiff_t real_segment_size;
+
+    /* non-leaf nodes - wait for children to send me data & forward up
+       (if needed) */
+    print_topo_level(rank, tree);
+    if( tree->tree_nextsize > 0 ) {
+
+        /* handle non existant recv buffer (i.e. its NULL) and
+           protect the recv buffer on non-root nodes */
+        accumbuf = (char*)recvbuf;
+        if( (NULL == accumbuf) || (root != rank) ) {
+            /* Allocate temporary accumulator buffer. */
+            size = opal_datatype_span(&datatype->super, original_count, &gap);
+            accumbuf_free = (char*)opal_cuda_malloc_gpu_buffer(size, 0);
+            if (accumbuf_free == NULL) {
+                line = __LINE__; ret = -1; goto error_hndl;
+            }
+            accumbuf = accumbuf_free - gap;
+        }
+
+        /* If this is a non-commutative operation we must copy
+           sendbuf to the accumbuf, in order to simplfy the loops */
+        if (!ompi_op_is_commute(op)) {
+            assert(0);
+            ompi_datatype_copy_content_same_ddt(datatype, original_count,
+                                                (char*)accumbuf,
+                                                (char*)sendtmpbuf);
+        }
+        /* Allocate two buffers for incoming segments */
+        real_segment_size = opal_datatype_span(&datatype->super, count_by_segment, &gap);
+        inbuf_free[0] = (char*)opal_cuda_malloc_gpu_buffer(real_segment_size, 0);
+        if( inbuf_free[0] == NULL ) {
+            line = __LINE__; ret = -1; goto error_hndl;
+        }
+        inbuf[0] = inbuf_free[0] - gap;
+        
+        /* node and socket leader allocate cpu buffer */
+        if (tree->topo_flags == 1 || tree->topo_flags == 0) {
+            cpu_buff_free[0] = (char*) mpool->mpool_alloc(mpool, real_segment_size, 0, 0);
+            if( cpu_buff_free[0] == NULL ) {
+                line = __LINE__; ret = -1; goto error_hndl;
+            }
+            cpu_buff[0] = cpu_buff_free[0] - gap;
+        }
+        
+        /* if there is chance to overlap communication -
+           allocate second buffer */
+        if( (num_segments > 1) || (tree->tree_nextsize > 1) ) {
+            inbuf_free[1] = (char*)opal_cuda_malloc_gpu_buffer(real_segment_size, 0);
+            if( inbuf_free[1] == NULL ) {
+                line = __LINE__; ret = -1; goto error_hndl;
+            }
+            inbuf[1] = inbuf_free[1] - gap;
+            
+            /* node and socket leader allocate cpu buffer */
+            if (tree->topo_flags == 1 || tree->topo_flags == 0) {
+                cpu_buff_free[1] = (char*) mpool->mpool_alloc(mpool, real_segment_size, 0, 0);
+                if( cpu_buff_free[1] == NULL ) {
+                    line = __LINE__; ret = -1; goto error_hndl;
+                }
+                cpu_buff[1] = cpu_buff_free[1] - gap;
+            }
+        }
+
+        /* reset input buffer index and receive count */
+        inbi = 0;
+        recvcount = 0;
+        /* for each segment */
+        for( segindex = 0; segindex <= num_segments; segindex++ ) {
+            prevcount = recvcount;
+            /* recvcount - number of elements in current segment */
+            recvcount = count_by_segment;
+            if( segindex == (num_segments-1) )
+                recvcount = original_count - (ptrdiff_t)count_by_segment * (ptrdiff_t)segindex;
+
+            /* for each child */
+            for( i = 0; i < tree->tree_nextsize; i++ ) {
+                /**
+                 * We try to overlap communication:
+                 * either with next segment or with the next child
+                 */
+                /* post irecv for current segindex on current child */
+                if( segindex < num_segments ) {
+                    void* local_recvbuf = inbuf[inbi];
+                    if( 0 == i ) {
+                        /* for the first step (1st child per segment) and
+                         * commutative operations we might be able to irecv
+                         * directly into the accumulate buffer so that we can
+                         * reduce(op) this with our sendbuf in one step as
+                         * ompi_op_reduce only has two buffer pointers,
+                         * this avoids an extra memory copy.
+                         *
+                         * BUT if the operation is non-commutative or
+                         * we are root and are USING MPI_IN_PLACE this is wrong!
+                         */
+                        if( (ompi_op_is_commute(op)) &&
+                            !((MPI_IN_PLACE == sendbuf) && (rank == tree->tree_root)) ) {
+                            local_recvbuf = accumbuf + (ptrdiff_t)segindex * (ptrdiff_t)segment_increment;
+                        }
+                    }
+                    
+                    /* node leader go through cpu */
+                    if (tree->topo_flags == 0 && tree->tree_next_topo_flags[i] != 2) {
+                      //  opal_cuda_memcpy_sync(cpu_buff[inbi], local_recvbuf, recvcount*type_size);
+                        local_recv_buff_tmp = cpu_buff[inbi];
+                        gpu_buff[inbi] = local_recvbuf;
+                    } else {
+                        local_recv_buff_tmp = local_recvbuf;
+                        gpu_buff[inbi] = NULL;
+                    }
+
+                    ret = MCA_PML_CALL(irecv(local_recv_buff_tmp, recvcount, datatype,
+                                             tree->tree_next[i],
+                                             MCA_COLL_BASE_TAG_REDUCE, comm,
+                                             &reqs[inbi]));
+                    if (ret != MPI_SUCCESS) { line = __LINE__; goto error_hndl;}
+                }
+                /* wait for previous req to complete, if any.
+                   if there are no requests reqs[inbi ^1] will be
+                   MPI_REQUEST_NULL. */
+                /* wait on data from last child for previous segment */
+                ret = ompi_request_wait_all( 1, &reqs[inbi ^ 1],
+                                             MPI_STATUSES_IGNORE );
+                if (ret != MPI_SUCCESS) { line = __LINE__; goto error_hndl;  }
+                
+                /* node leader  copy back to gpu */
+                if (tree->topo_flags == 0) {
+                    if (i > 0) {
+                        if (cpu_buff[inbi^1] != NULL && gpu_buff[inbi^1] != NULL) {
+                            opal_cuda_memcpy_sync(gpu_buff[inbi ^ 1], cpu_buff[inbi ^ 1], recvcount*type_size);
+                            gpu_buff[inbi^1] == NULL;
+                        }
+                    } else if (segindex > 0) {
+                        if (cpu_buff[inbi^1] != NULL && gpu_buff[inbi^1] != NULL) {
+                            opal_cuda_memcpy_sync(gpu_buff[inbi ^ 1], cpu_buff[inbi ^ 1], prevcount*type_size);
+                            gpu_buff[inbi^1] == NULL;
+                        }
+                    }
+                }
+                
+                local_op_buffer = inbuf[inbi ^ 1];
+                if( i > 0 ) {
+                    /* our first operation is to combine our own [sendbuf] data
+                     * with the data we recvd from down stream (but only
+                     * the operation is commutative and if we are not root and
+                     * not using MPI_IN_PLACE)
+                     */
+                    if( 1 == i ) {
+                        if( (ompi_op_is_commute(op)) &&
+                            !((MPI_IN_PLACE == sendbuf) && (rank == tree->tree_root)) ) {
+                            local_op_buffer = sendtmpbuf + (ptrdiff_t)segindex * (ptrdiff_t)segment_increment;
+                        }
+                    }
+                    /* apply operation */
+                    opal_cuda_recude_op_sum_double(local_op_buffer, accumbuf + (ptrdiff_t)segindex * (ptrdiff_t)segment_increment, recvcount, NULL);
+                } else if ( segindex > 0 ) {
+                    void* accumulator = accumbuf + (ptrdiff_t)(segindex-1) * (ptrdiff_t)segment_increment;
+                    if( tree->tree_nextsize <= 1 ) {
+                        if( (ompi_op_is_commute(op)) &&
+                            !((MPI_IN_PLACE == sendbuf) && (rank == tree->tree_root)) ) {
+                            local_op_buffer = sendtmpbuf + (ptrdiff_t)(segindex-1) * (ptrdiff_t)segment_increment;
+                        }
+                    }
+                    opal_cuda_recude_op_sum_double(local_op_buffer, accumulator, prevcount, NULL);
+
+                    /* all reduced on available data this step (i) complete,
+                     * pass to the next process unless you are the root.
+                     */
+                    if (rank != tree->tree_root) {
+                        if (tree->topo_flags == 0 || tree->topo_flags == 1) {
+                            opal_cuda_memcpy_sync(cpu_buff[inbi ^ 1], accumulator, prevcount*type_size);
+                            local_send_buff_tmp = cpu_buff[inbi ^ 1];
+                        } else {
+                            local_send_buff_tmp = accumulator;
+                        }
+                        /* send combined/accumulated data to parent */
+                        ret = MCA_PML_CALL( send( local_send_buff_tmp, prevcount,
+                                                  datatype, tree->tree_prev,
+                                                  MCA_COLL_BASE_TAG_REDUCE,
+                                                  MCA_PML_BASE_SEND_STANDARD,
+                                                  comm) );
+                        if (ret != MPI_SUCCESS) {
+                            line = __LINE__; goto error_hndl;
+                        }
+                    }
+
+                    /* we stop when segindex = number of segments
+                       (i.e. we do num_segment+1 steps for pipelining */
+                    if (segindex == num_segments) break;
+                }
+
+                /* update input buffer index */
+                inbi = inbi ^ 1;
+            } /* end of for each child */
+        } /* end of for each segment */
+
+        /* clean up */
+        if( inbuf_free[0] != NULL) { opal_cuda_free_gpu_buffer(inbuf_free[0], 0); inbuf_free[0] = NULL; }
+        if( inbuf_free[1] != NULL) { opal_cuda_free_gpu_buffer(inbuf_free[1], 0); inbuf_free[1] = NULL; }
+        if( accumbuf_free != NULL ) { opal_cuda_free_gpu_buffer(accumbuf_free, 0); accumbuf_free = NULL; }
+    }
+
+    /* leaf nodes
+       Depending on the value of max_outstanding_reqs and
+       the number of segments we have two options:
+       - send all segments using blocking send to the parent, or
+       - avoid overflooding the parent nodes by limiting the number of
+       outstanding requests to max_oustanding_reqs.
+       TODO/POSSIBLE IMPROVEMENT: If there is a way to determine the eager size
+       for the current communication, synchronization should be used only
+       when the message/segment size is smaller than the eager size.
+    */
+    else {
+
+        /* If the number of segments is less than a maximum number of oustanding
+           requests or there is no limit on the maximum number of outstanding
+           requests, we send data to the parent using blocking send */
+        if ((0 == max_outstanding_reqs) ||
+            (num_segments <= max_outstanding_reqs)) {
+
+            segindex = 0;
+            while ( original_count > 0) {
+                if (original_count < count_by_segment) {
+                    count_by_segment = original_count;
+                }
+                /* socket leader */
+                if ((tree->topo_flags == 1 || tree->topo_flags == 0) && tree->tree_prev_topo_flags == 0) {
+                    if (cpu_buff_free[0] == NULL) {
+                        real_segment_size = opal_datatype_span(&datatype->super, count_by_segment, &gap);
+                        cpu_buff_free[0] = (char*) mpool->mpool_alloc(mpool, real_segment_size, 0, 0);
+                        if( cpu_buff_free[0] == NULL ) {
+                            line = __LINE__; ret = -1; goto error_hndl;
+                        }
+                        cpu_buff[0] = cpu_buff_free[0] - gap;
+                    }
+                    assert(cpu_buff[0] != NULL);
+                    opal_cuda_memcpy_sync(cpu_buff[0], (char*)sendbuf + (ptrdiff_t)segindex * (ptrdiff_t)segment_increment, count_by_segment*type_size);
+                    local_send_buff_tmp = cpu_buff[0];
+                } else {
+                    local_send_buff_tmp = (char*)sendbuf;
+                }
+                ret = MCA_PML_CALL( send((char*)local_send_buff_tmp +
+                                         (ptrdiff_t)segindex * (ptrdiff_t)segment_increment,
+                                         count_by_segment, datatype,
+                                         tree->tree_prev,
+                                         MCA_COLL_BASE_TAG_REDUCE,
+                                         MCA_PML_BASE_SEND_STANDARD,
+                                         comm) );
+                if (ret != MPI_SUCCESS) { line = __LINE__; goto error_hndl; }
+                segindex++;
+                original_count -= count_by_segment;
+            }
+        }
+
+        /* Otherwise, introduce flow control:
+           - post max_outstanding_reqs non-blocking synchronous send,
+           - for remaining segments
+           - wait for a ssend to complete, and post the next one.
+           - wait for all outstanding sends to complete.
+        */
+        else {
+            assert(0);
+
+            int creq = 0;
+
+            sreq = coll_base_comm_get_reqs(module->base_data, max_outstanding_reqs);
+            if (NULL == sreq) { line = __LINE__; ret = -1; goto error_hndl; }
+
+            /* post first group of requests */
+            for (segindex = 0; segindex < max_outstanding_reqs; segindex++) {
+                ret = MCA_PML_CALL( isend((char*)sendbuf +
+                                          (ptrdiff_t)segindex * (ptrdiff_t)segment_increment,
+                                          count_by_segment, datatype,
+                                          tree->tree_prev,
+                                          MCA_COLL_BASE_TAG_REDUCE,
+                                          MCA_PML_BASE_SEND_SYNCHRONOUS, comm,
+                                          &sreq[segindex]) );
+                if (ret != MPI_SUCCESS) { line = __LINE__; goto error_hndl;  }
+                original_count -= count_by_segment;
+            }
+
+            creq = 0;
+            while ( original_count > 0 ) {
+                /* wait on a posted request to complete */
+                ret = ompi_request_wait(&sreq[creq], MPI_STATUS_IGNORE);
+                if (ret != MPI_SUCCESS) { line = __LINE__; goto error_hndl;  }
+
+                if( original_count < count_by_segment ) {
+                    count_by_segment = original_count;
+                }
+                ret = MCA_PML_CALL( isend((char*)sendbuf +
+                                          (ptrdiff_t)segindex * (ptrdiff_t)segment_increment,
+                                          count_by_segment, datatype,
+                                          tree->tree_prev,
+                                          MCA_COLL_BASE_TAG_REDUCE,
+                                          MCA_PML_BASE_SEND_SYNCHRONOUS, comm,
+                                          &sreq[creq]) );
+                if (ret != MPI_SUCCESS) { line = __LINE__; goto error_hndl;  }
+                creq = (creq + 1) % max_outstanding_reqs;
+                segindex++;
+                original_count -= count_by_segment;
+            }
+
+            /* Wait on the remaining request to complete */
+            ret = ompi_request_wait_all( max_outstanding_reqs, sreq,
+                                         MPI_STATUSES_IGNORE );
+            if (ret != MPI_SUCCESS) { line = __LINE__; goto error_hndl;  }
+        }
+    }
+    
+    if (cpu_buff_free[0] != NULL) { mpool->mpool_free(mpool, cpu_buff_free[0]); cpu_buff_free[0] = NULL; }
+    if (cpu_buff_free[1] != NULL) { mpool->mpool_free(mpool, cpu_buff_free[1]); cpu_buff_free[1] = NULL;}
+    return OMPI_SUCCESS;
+
+ error_hndl:  /* error handler */
+    OPAL_OUTPUT (( ompi_coll_base_framework.framework_output,
+                   "ERROR_HNDL: node %d file %s line %d error %d\n",
+                   rank, __FILE__, line, ret ));
+    (void)line;  // silence compiler warning
+    if( inbuf_free[0] != NULL ) { opal_cuda_free_gpu_buffer(inbuf_free[0], 0); inbuf_free[0] = NULL; }
+    if( inbuf_free[1] != NULL ) { opal_cuda_free_gpu_buffer(inbuf_free[1], 0); inbuf_free[1] = NULL; }
+    if( accumbuf_free != NULL ) { opal_cuda_free_gpu_buffer(accumbuf, 0); accumbuf = NULL; }
+    if( NULL != sreq ) {
+        ompi_coll_base_free_reqs(sreq, max_outstanding_reqs);
+    }
+    return ret;
+}
+
 
 static mca_coll_adapt_cuda_inbuf_t * to_inbuf(char * buf, int distance){
     return (mca_coll_adapt_cuda_inbuf_t *)(buf - distance);

@@ -91,6 +91,13 @@ int mca_coll_adapt_cuda_reduce_topo_generic( const void* sendbuf, void* recvbuf,
                                     ompi_coll_tree_t* tree, int count_by_segment,
                                     int max_outstanding_reqs );
 
+int mca_coll_adapt_cuda_reduce_topo_generic_cpu( const void* sendbuf, void* recvbuf, int original_count,
+                                    struct ompi_datatype_t* datatype, struct ompi_op_t* op,
+                                    int root, struct ompi_communicator_t* comm,
+                                    mca_coll_base_module_t *module,
+                                    ompi_coll_tree_t* tree, int count_by_segment,
+                                    int max_outstanding_reqs );
+
 int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t* tree);
 
 int mca_coll_adapt_cuda_ireduce(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module);
