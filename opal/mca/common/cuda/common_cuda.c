@@ -941,6 +941,17 @@ void mca_common_cuda_fini(void)
             }
             free(cuda_event_dtoh_array);
         }
+        
+        if (NULL != cuda_event_memcpy_array) {
+            if (ctx_ok) {
+                for (i = 0; i < cuda_event_max; i++) {
+                    if (NULL != cuda_event_memcpy_array[i]) {
+                        cuFunc.cuEventDestroy(cuda_event_memcpy_array[i]);
+                    }
+                }
+            }
+            free(cuda_event_memcpy_array);
+        }
 
         if (NULL != cuda_event_ipc_frag_array) {
             free(cuda_event_ipc_frag_array);
@@ -2185,6 +2196,18 @@ int mca_common_cuda_memcpy_async(void *dest, const void *src, size_t size)
         opal_output_verbose(0, mca_common_cuda_output, "async memcpy is not enabled\n");
         return -1;
     }
+}
+
+int mca_common_cuda_sync_memcpy_stream()
+{
+    int result;
+    result = cuFunc.cuStreamSynchronize(memcpyStream);
+    if (OPAL_UNLIKELY(CUDA_SUCCESS != result)) {
+        opal_show_help("help-mpi-common-cuda.txt", "cuStreamSynchronize failed",
+                       true, OPAL_PROC_MY_HOSTNAME, result);
+        return OPAL_ERROR;
+    }   
+    return 0;
 }
 
 int mca_common_cuda_is_stage_three_init()
