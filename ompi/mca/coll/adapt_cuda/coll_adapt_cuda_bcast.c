@@ -212,13 +212,15 @@ static int send_cb_cpu(ompi_request_t *req)
     
     opal_mutex_lock (context->con->mutex);
     /*  check if cpu_buff_list can be released */
- /*   context->con->cpu_buff_list_ref_count[context->frag_id] ++;
-    if (tree->tree_nextsize == context->con->cpu_buff_list_ref_count[context->frag_id]) {
-        if (context->con->cpu_buff_list[context->frag_id] != NULL) {
-            mpool->mpool_free(mpool, context->con->cpu_buff_list[context->frag_id]);
-            context->con->cpu_buff_list[context->frag_id] = NULL;
+    if (context->con->cpu_buff_list != NULL) {
+        context->con->cpu_buff_list_ref_count[context->frag_id] ++;
+        if (tree->tree_nextsize == context->con->cpu_buff_list_ref_count[context->frag_id]) {
+            if (context->con->cpu_buff_list[context->frag_id] != NULL) {
+                mpool->mpool_free(mpool, context->con->cpu_buff_list[context->frag_id]);
+                context->con->cpu_buff_list[context->frag_id] = NULL;
+            }
         }
-    }*/
+    }
     
     int sent_id = context->con->send_array[context->child_id];
     int num_sent = ++(context->con->num_sent_segs);
@@ -1381,6 +1383,7 @@ int mca_coll_adapt_cuda_bcast_generic_cpu(void *buff, int count, struct ompi_dat
     con->tree = tree;
     con->cpu_buff_list = NULL;
     con->cpu_buff_memcpy_flags = NULL;
+    con->cpu_buff_list_ref_count = NULL;
     
     TEST("[%d, %" PRIx64 "]: Bcast, root %d\n", rank, gettid(), root);
     TEST("[%d, %" PRIx64 "]: con->mutex = %p, num_children = %d\n", rank, gettid(), (void *)con->mutex, tree->tree_nextsize);
@@ -1514,9 +1517,11 @@ int mca_coll_adapt_cuda_bcast_generic_cpu(void *buff, int count, struct ompi_dat
                 if (con->cpu_buff_list == NULL) {
                     con->cpu_buff_list = malloc(sizeof(char*) * num_segs);
                     con->cpu_buff_memcpy_flags = (int *)malloc(sizeof(int) * num_segs);
+                    con->cpu_buff_list_ref_count = (int *)malloc(sizeof(int) * num_segs);
                     for (k = 0; k < num_segs; k++) {
                         con->cpu_buff_memcpy_flags[k] = CPU_BUFFER_MEMCPY_NOT_DONE;
                         con->cpu_buff_list[k] = NULL;
+                        con->cpu_buff_list_ref_count[k] = 0;
                     }
                 }
                 assert(con->cpu_buff_list != NULL);
@@ -1565,12 +1570,15 @@ int mca_coll_adapt_cuda_bcast_generic_cpu(void *buff, int count, struct ompi_dat
                 free_count ++;
             }
         }
-        opal_output(0, "rank %d freed %d block at last\n", free_count);
+        opal_output(0, "rank %d freed %d block at last\n", rank, free_count);
         free(con->cpu_buff_list);
         con->cpu_buff_list = NULL;
     }
     if (con->cpu_buff_memcpy_flags != NULL) {
         free(con->cpu_buff_memcpy_flags);
+    }
+    if (con->cpu_buff_list_ref_count != NULL) {
+        free(con->cpu_buff_list_ref_count);
     }
     OBJ_RELEASE(con->mutex);
     OBJ_RELEASE(con);
