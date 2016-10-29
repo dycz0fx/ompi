@@ -956,10 +956,9 @@ int mca_coll_adapt_cuda_reduce_topo_generic_cpu( const void* sendbuf, void* recv
                     opal_cuda_memcpy_sync(cpu_buff[0], (char*)sendbuf + (ptrdiff_t)segindex * (ptrdiff_t)segment_increment, count_by_segment*type_size);
                     local_send_buff_tmp = cpu_buff[0];
                 } else {
-                    local_send_buff_tmp = (char*)sendbuf;
+                    local_send_buff_tmp = (char*)sendbuf + (ptrdiff_t)segindex * (ptrdiff_t)segment_increment;
                 }
-                ret = MCA_PML_CALL( send((char*)local_send_buff_tmp +
-                                         (ptrdiff_t)segindex * (ptrdiff_t)segment_increment,
+                ret = MCA_PML_CALL( send((char*)local_send_buff_tmp,
                                          count_by_segment, datatype,
                                          tree->tree_prev,
                                          MCA_COLL_BASE_TAG_REDUCE,
