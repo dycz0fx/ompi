@@ -194,7 +194,7 @@ static void *coll_adapt_cuda_mpool_alloc (mca_mpool_base_module_t *mpool,
         coll_adapt_cuda_mpool_list_push_head(&mempool->buffer_used, ptr);
         mempool->buffer_used_size += size;
         mempool->buffer_free_size -= size;
-        opal_output( 0, "Malloc buffer from mpool %p, size %lu\n", addr, size);
+    //    opal_output( 0, "Malloc buffer from mpool %p, size %lu\n", addr, size);
         return addr;
     }
     return NULL;
@@ -233,7 +233,7 @@ static void coll_adapt_cuda_mpool_free(mca_mpool_base_module_t *mpool,
     coll_adapt_cuda_mpool_list_item_merge_by_addr(&mempool->buffer_free, ptr);
     mempool->buffer_free_size += size;
     mempool->buffer_used_size -= size;
-    opal_output( 0, "Free buffer to mpool %p, size %lu\n", addr, size);
+  //  opal_output( 0, "Free buffer to mpool %p, size %lu\n", addr, size);
 }
 
 

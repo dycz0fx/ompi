@@ -27,8 +27,9 @@ struct mca_coll_adapt_cuda_constant_bcast_context_s {
     int num_recv_segs; //store the length of the fragment array, how many fragments are recevied
     int num_sent_segs;  //number of sent segments
     ompi_coll_tree_t * tree;
-    char *cpu_buff_list;
+    char **cpu_buff_list;
     int *cpu_buff_memcpy_flags;
+    int *cpu_buff_list_ref_count;
 };
 
 typedef struct mca_coll_adapt_cuda_constant_bcast_context_s mca_coll_adapt_cuda_constant_bcast_context_t;
