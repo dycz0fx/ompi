@@ -40,7 +40,6 @@ OBJ_CLASS_DECLARATION(mca_coll_adapt_cuda_constant_bcast_context_t);
 struct mca_coll_adapt_cuda_bcast_context_s {
     opal_free_list_item_t super;
     char *buff;
-    char *buff_tmp;
     int frag_id;
     int child_id;
     int peer;
