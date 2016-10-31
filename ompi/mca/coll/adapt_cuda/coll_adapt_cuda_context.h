@@ -38,6 +38,10 @@ OBJ_CLASS_DECLARATION(mca_coll_adapt_cuda_constant_bcast_context_t);
 
 
 //bcast context
+typedef struct mca_coll_adapt_cuda_bcast_context_s mca_coll_adapt_cuda_bcast_context_t;
+
+typedef int (*mca_coll_adapt_cuda_bcast_cuda_callback_fn_t)(mca_coll_adapt_cuda_bcast_context_t *context);
+
 struct mca_coll_adapt_cuda_bcast_context_s {
     opal_free_list_item_t super;
     char *buff;
@@ -46,9 +50,8 @@ struct mca_coll_adapt_cuda_bcast_context_s {
     int peer;
     size_t send_count;
     mca_coll_adapt_cuda_constant_bcast_context_t * con;
+    mca_coll_adapt_cuda_bcast_cuda_callback_fn_t cuda_callback; 
 };
-
-typedef struct mca_coll_adapt_cuda_bcast_context_s mca_coll_adapt_cuda_bcast_context_t;
 
 OBJ_CLASS_DECLARATION(mca_coll_adapt_cuda_bcast_context_t);
 

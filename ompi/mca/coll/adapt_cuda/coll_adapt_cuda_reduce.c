@@ -369,8 +369,8 @@ int mca_coll_adapt_cuda_reduce_topoaware_chain(const void *sbuf, void *rbuf, int
     size_t typelng;
     ompi_datatype_type_size( dtype, &typelng );
     COLL_BASE_COMPUTED_SEGCOUNT( SEG_SIZE, typelng, segcount );
-   // int r = mca_coll_adapt_cuda_reduce_topo_generic(sbuf, rbuf, count, dtype, op, root, comm, module, coll_comm->cached_topochain, segcount, 0);
-    int r = mca_coll_adapt_cuda_reduce_topo_generic_cpu(sbuf, rbuf, count, dtype, op, root, comm, module, coll_comm->cached_topochain, segcount, 0);
+   int r = mca_coll_adapt_cuda_reduce_topo_generic(sbuf, rbuf, count, dtype, op, root, comm, module, coll_comm->cached_topochain, segcount, 0);
+    //int r = mca_coll_adapt_cuda_reduce_topo_generic_cpu(sbuf, rbuf, count, dtype, op, root, comm, module, coll_comm->cached_topochain, segcount, 0);
   //  ompi_coll_base_topo_destroy_tree(&tree);
     return r;
 }
