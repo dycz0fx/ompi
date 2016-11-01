@@ -27,7 +27,7 @@
 int bcast_count = 0;
 ncclComm_t nccl_comm = NULL;
 
-int coll_adapt_cuda_bcast_use_sync = 0;
+int coll_adapt_cuda_bcast_use_sync = 1;
 
 static void printfno(){
     
@@ -250,7 +250,8 @@ static int send_cb_cpu(ompi_request_t *req)
                 assert(context->con->cpu_buff_list != NULL);
                 if (context->con->cpu_buff_memcpy_flags[new_id] == CPU_BUFFER_MEMCPY_NOT_DONE) {
                     context->con->cpu_buff_list[new_id] = mpool->mpool_alloc(mpool, sizeof(char)* context->con->real_seg_size, 0, 0);
-                    opal_cuda_memcpy_sync(context->con->cpu_buff_list[new_id], (char*)send_context->buff, send_count*type_size);
+                   // opal_cuda_memcpy_sync(context->con->cpu_buff_list[new_id], (char*)send_context->buff, send_count*type_size);
+                    ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, context->con->cpu_buff_list[new_id], (char*)send_context->buff);
                     context->con->cpu_buff_memcpy_flags[new_id] = CPU_BUFFER_MEMCPY_DONE;
                 }
                 send_buff = context->con->cpu_buff_list[new_id];
@@ -264,7 +265,8 @@ static int send_cb_cpu(ompi_request_t *req)
                 if (context->con->cpu_buff_memcpy_flags[new_id] == CPU_BUFFER_MEMCPY_NOT_DONE) {
                     opal_output(0, "topo 0 0 sendcb memcpy\n");
                     context->con->cpu_buff_list[new_id] = mpool->mpool_alloc(mpool, sizeof(char)* context->con->real_seg_size, 0, 0);
-                    opal_cuda_memcpy_sync(send_context->buff, context->con->cpu_buff_list[new_id], send_count*type_size);
+                   // opal_cuda_memcpy_sync(send_context->buff, context->con->cpu_buff_list[new_id], send_count*type_size);
+                    ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, send_context->buff, context->con->cpu_buff_list[new_id]);
                     context->con->cpu_buff_memcpy_flags[new_id] = CPU_BUFFER_MEMCPY_DONE;
                 }
                 send_buff = send_context->buff;
@@ -276,7 +278,8 @@ static int send_cb_cpu(ompi_request_t *req)
     //        opal_output(0, "topo 1 sendcb memcpy\n");
             if (context->con->cpu_buff_memcpy_flags[new_id] == CPU_BUFFER_MEMCPY_NOT_DONE) {
                 context->con->cpu_buff_list[new_id] = mpool->mpool_alloc(mpool, sizeof(char)* context->con->real_seg_size, 0, 0);
-                opal_cuda_memcpy_sync(send_context->buff, context->con->cpu_buff_list[new_id], send_count*type_size);
+               // opal_cuda_memcpy_sync(send_context->buff, context->con->cpu_buff_list[new_id], send_count*type_size);
+                ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, send_context->buff, context->con->cpu_buff_list[new_id]);
                 context->con->cpu_buff_memcpy_flags[new_id] = CPU_BUFFER_MEMCPY_DONE;
             }
             send_buff = send_context->buff;
@@ -403,7 +406,8 @@ static int recv_cb_cpu(ompi_request_t *req){
                 assert(context->con->cpu_buff_list[context->frag_id] != NULL);
                 if (context->con->cpu_buff_memcpy_flags[context->frag_id] == CPU_BUFFER_MEMCPY_NOT_DONE) {
                     if (coll_adapt_cuda_bcast_use_sync) {
-                        opal_cuda_memcpy_sync(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
+                    //    opal_cuda_memcpy_sync(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
+                        ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, context->buff, context->con->cpu_buff_list[context->frag_id]);
                         context->con->cpu_buff_memcpy_flags[context->frag_id] = CPU_BUFFER_MEMCPY_DONE;
                     } else {
                         mca_common_cuda_memcpy_async(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
@@ -425,7 +429,8 @@ static int recv_cb_cpu(ompi_request_t *req){
             //              opal_output(0, "topo 0 recv cb memcpy\n");
                     if (context->con->cpu_buff_memcpy_flags[context->frag_id] == CPU_BUFFER_MEMCPY_NOT_DONE) {
                         if (coll_adapt_cuda_bcast_use_sync) {
-                            opal_cuda_memcpy_sync(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
+                            //opal_cuda_memcpy_sync(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
+                            ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, context->buff, context->con->cpu_buff_list[context->frag_id]);
                             context->con->cpu_buff_memcpy_flags[context->frag_id] = CPU_BUFFER_MEMCPY_DONE;
                         } else {
                             mca_common_cuda_memcpy_async(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
@@ -466,11 +471,12 @@ static int recv_cb_cpu(ompi_request_t *req){
                 send_count = context->con->count - context->frag_id * context->con->seg_count;
             }
             if (coll_adapt_cuda_bcast_use_sync) {
-                opal_cuda_memcpy_sync(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
+            //    opal_cuda_memcpy_sync(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
+                ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, context->buff, context->con->cpu_buff_list[context->frag_id]);
             } else {
-                mca_coll_adapt_cuda_bcast_context_t * cuda_memcpy_context = (mca_coll_adapt_cuda_bcast_context_t *) opal_free_list_wait(context->con->context_list);
-                cuda_memcpy_context->con = context->con;
-                cuda_memcpy_context->cuda_callback = bcast_send_context_async_memcpy_update_ref_count_callback;
+           //     mca_coll_adapt_cuda_bcast_context_t * cuda_memcpy_context = (mca_coll_adapt_cuda_bcast_context_t *) opal_free_list_wait(context->con->context_list);
+            //    cuda_memcpy_context->con = context->con;
+              //  cuda_memcpy_context->cuda_callback = bcast_send_context_async_memcpy_update_ref_count_callback;
                 mca_common_cuda_memcpy_async(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
              //   mca_common_cuda_record_memcpy_event("memcpy in coll_adapt_cuda_bcast", (void *)context);
             }
@@ -1059,7 +1065,8 @@ int mca_coll_adapt_cuda_bcast_generic_cpu(void *buff, int count, struct ompi_dat
                     if (con->cpu_buff_memcpy_flags[i] == CPU_BUFFER_MEMCPY_NOT_DONE) {
                        // ompi_datatype_copy_content_same_ddt(datatype, send_count, (char*)cpu_buff_list + i * real_seg_size, (char*)context->buff);
                         con->cpu_buff_list[i] = mpool->mpool_alloc(mpool, sizeof(char)* real_seg_size, 0, 0);
-                        opal_cuda_memcpy_sync(con->cpu_buff_list[i], (char*)context->buff, send_count*type_size);
+                      //  opal_cuda_memcpy_sync(con->cpu_buff_list[i], (char*)context->buff, send_count*type_size);
+                        ompi_datatype_copy_content_same_ddt(datatype, send_count, con->cpu_buff_list[i], (char*)context->buff);
                         con->cpu_buff_memcpy_flags[i] = CPU_BUFFER_MEMCPY_DONE;
                     }
                     send_buff = con->cpu_buff_list[i];
