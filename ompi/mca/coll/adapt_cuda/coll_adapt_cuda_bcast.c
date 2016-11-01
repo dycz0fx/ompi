@@ -12,6 +12,7 @@
 #include "opal/sys/atomic.h"                //atomic
 #include "ompi/mca/pml/ob1/pml_ob1.h"       //dump
 #include "opal/datatype/opal_datatype_cuda.h"
+#include "opal/datatype/opal_datatype.h"
 #include "coll_adapt_cuda_mpool.h"
 #include "coll_adapt_cuda_nccl.h"
 #include "opal/mca/common/cuda/common_cuda.h"
@@ -27,7 +28,7 @@
 int bcast_count = 0;
 ncclComm_t nccl_comm = NULL;
 
-int coll_adapt_cuda_bcast_use_sync = 1;
+int coll_adapt_cuda_bcast_use_sync = 0;
 
 static void printfno(){
     
@@ -410,11 +411,14 @@ static int recv_cb_cpu(ompi_request_t *req){
                         ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, context->buff, context->con->cpu_buff_list[context->frag_id]);
                         context->con->cpu_buff_memcpy_flags[context->frag_id] = CPU_BUFFER_MEMCPY_DONE;
                     } else {
-                        mca_common_cuda_memcpy_async(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
+                        context->con->datatype->super.flags |= OPAL_DATATYPE_FLAG_GPU_ASYNC;
+                      //  mca_common_cuda_memcpy_async(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
+                        ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, context->buff, context->con->cpu_buff_list[context->frag_id]);
                         send_context->send_count = send_count;
                         send_context->buff = context->buff;
                         send_context->cuda_callback = bcast_send_context_async_memcpy_callback;
                         mca_common_cuda_record_memcpy_event("memcpy in coll_adapt_cuda_bcast", (void *)send_context);
+                        context->con->datatype->super.flags &= ~OPAL_DATATYPE_FLAG_GPU_ASYNC;
                         context->con->cpu_buff_memcpy_flags[context->frag_id] = CPU_BUFFER_MEMCPY_DONE;
                       //  opal_output(0, "topo 0 recv cb record event\n");
                         continue;
@@ -433,11 +437,14 @@ static int recv_cb_cpu(ompi_request_t *req){
                             ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, context->buff, context->con->cpu_buff_list[context->frag_id]);
                             context->con->cpu_buff_memcpy_flags[context->frag_id] = CPU_BUFFER_MEMCPY_DONE;
                         } else {
-                            mca_common_cuda_memcpy_async(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
+                            //mca_common_cuda_memcpy_async(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
+                            context->con->datatype->super.flags |= OPAL_DATATYPE_FLAG_GPU_ASYNC;
+                            ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, context->buff, context->con->cpu_buff_list[context->frag_id]);
                             send_context->send_count = send_count;
                             send_context->buff = context->buff;
                             send_context->cuda_callback = bcast_send_context_async_memcpy_callback;
                             mca_common_cuda_record_memcpy_event("memcpy in coll_adapt_cuda_bcast", (void *)send_context);
+                            context->con->datatype->super.flags &= ~OPAL_DATATYPE_FLAG_GPU_ASYNC;
                             context->con->cpu_buff_memcpy_flags[context->frag_id] = CPU_BUFFER_MEMCPY_DONE;
                           //  opal_output(0, "topo 0 recv cb record event\n");
                             continue;
@@ -474,10 +481,13 @@ static int recv_cb_cpu(ompi_request_t *req){
             //    opal_cuda_memcpy_sync(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
                 ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, context->buff, context->con->cpu_buff_list[context->frag_id]);
             } else {
+                context->con->datatype->super.flags |= OPAL_DATATYPE_FLAG_GPU_ASYNC;
            //     mca_coll_adapt_cuda_bcast_context_t * cuda_memcpy_context = (mca_coll_adapt_cuda_bcast_context_t *) opal_free_list_wait(context->con->context_list);
             //    cuda_memcpy_context->con = context->con;
               //  cuda_memcpy_context->cuda_callback = bcast_send_context_async_memcpy_update_ref_count_callback;
-                mca_common_cuda_memcpy_async(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
+               // mca_common_cuda_memcpy_async(context->buff, context->con->cpu_buff_list[context->frag_id], send_count*type_size);
+                ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, context->buff, context->con->cpu_buff_list[context->frag_id]);
+                context->con->datatype->super.flags &= ~OPAL_DATATYPE_FLAG_GPU_ASYNC;
              //   mca_common_cuda_record_memcpy_event("memcpy in coll_adapt_cuda_bcast", (void *)context);
             }
             context->con->cpu_buff_memcpy_flags[context->frag_id] = CPU_BUFFER_MEMCPY_DONE;

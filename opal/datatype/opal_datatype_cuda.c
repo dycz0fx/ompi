@@ -162,7 +162,6 @@ void *opal_cuda_memcpy_sync(void *dest, const void *src, size_t size)
 void *opal_cuda_memcpy_async(void *dest, const void *src, size_t size)
 {
     int res;
-    assert(0);
     res = ftable.gpu_cu_memcpy_async_memcpystream(dest, src, size);
     if (res != 0) {
         opal_output(0, "CUDA: Error in cuMemcpy: res=%d, dest=%p, src=%p, size=%d",
