@@ -514,6 +514,7 @@ static int mca_common_cuda_stage_two_init(opal_common_cuda_function_table_t *fta
 
     ftable->gpu_is_gpu_buffer = &mca_common_cuda_is_gpu_buffer;
     ftable->gpu_cu_memcpy_async = &mca_common_cuda_cu_memcpy_async;
+    ftable->gpu_cu_memcpy_async_memcpystream = &mca_common_cuda_memcpy_async;
     ftable->gpu_cu_memcpy = &mca_common_cuda_cu_memcpy;
     ftable->gpu_memmove = &mca_common_cuda_memmove;
 

@@ -41,7 +41,7 @@
 #define DO_DEBUG(INST)
 #endif  /* OPAL_ENABLE_DEBUG */
 
-static size_t opal_datatype_memop_block_size = 128 * 1024;
+static size_t opal_datatype_memop_block_size = 512 * 1024;
 
 /**
  * Non overlapping memory regions
@@ -50,6 +50,8 @@ static size_t opal_datatype_memop_block_size = 128 * 1024;
 #define MEM_OP_NAME  non_overlap
 #undef MEM_OP
 #define MEM_OP       MEMCPY
+#undef MEM_OP_ASYNC
+#define MEM_OP_ASYNC MEMCPY
 #include "opal_datatype_copy.h"
 
 #define MEMMOVE(d, s, l)                                  \
@@ -69,6 +71,8 @@ static size_t opal_datatype_memop_block_size = 128 * 1024;
 #define MEM_OP_NAME  overlap
 #undef MEM_OP
 #define MEM_OP       MEMMOVE
+#undef MEM_OP_ASYNC
+#define MEM_OP_ASYNC MEMMOVE
 #include "opal_datatype_copy.h"
 
 #if OPAL_CUDA_SUPPORT
@@ -78,12 +82,16 @@ static size_t opal_datatype_memop_block_size = 128 * 1024;
 #define MEM_OP_NAME non_overlap_cuda
 #undef MEM_OP
 #define MEM_OP opal_cuda_memcpy_sync
+#undef MEM_OP_ASYNC
+#define MEM_OP_ASYNC opal_cuda_memcpy_async
 #include "opal_datatype_copy.h"
 
 #undef MEM_OP_NAME
 #define MEM_OP_NAME overlap_cuda
 #undef MEM_OP
 #define MEM_OP opal_cuda_memmove
+#undef MEM_OP_ASYNC
+#define MEM_OP_ASYNC opal_cuda_memmove  
 #include "opal_datatype_copy.h"
 
 #define SET_CUDA_COPY_FCT(cuda_device_bufs, fct, copy_function)     \
