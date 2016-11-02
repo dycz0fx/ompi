@@ -31,7 +31,7 @@ static void printfno(){
     
 }
 
-static size_t real_seg_size_cuda = 0;
+//static size_t real_seg_size_cuda = 0;
 #define TIMER_DATA_TYPE struct timeval
 #define GET_TIME(TV)   gettimeofday( &(TV), NULL )
 #define ELAPSED_TIME(TSTART, TEND)  (((TEND).tv_sec - (TSTART).tv_sec) * 1000000 + ((TEND).tv_usec - (TSTART).tv_usec))
@@ -75,6 +75,8 @@ static int add_to_list(opal_list_t* list, int id){
     TEST("add_to_list_return %d\n", ret);
     return ret;
 }
+
+#if 0
 
 static int send_cb(ompi_request_t *req){
     mca_coll_adapt_cuda_reduce_context_t *context = (mca_coll_adapt_cuda_reduce_context_t *) req->req_complete_cb_data;
@@ -289,6 +291,8 @@ static int recv_cb(ompi_request_t *req){
     return MPI_SUCCESS;
 }
 
+#endif
+
 int mca_coll_adapt_cuda_reduce(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     printf("reduce cuda pipeline\n");
     //return mca_coll_adapt_cuda_reduce_pipeline(sbuf, rbuf, count, dtype, op, root, comm, module);
@@ -364,12 +368,12 @@ int mca_coll_adapt_cuda_reduce_topoaware_chain(const void *sbuf, void *rbuf, int
     }
     else {
     }
-    //int r =  mca_coll_adapt_cuda_reduce_generic(sbuf, rbuf, count, dtype, op, root, comm, module, tree);
+    int r =  mca_coll_adapt_cuda_reduce_generic(sbuf, rbuf, count, dtype, op, root, comm, module, coll_comm->cached_topochain);
     int segcount = count;
     size_t typelng;
     ompi_datatype_type_size( dtype, &typelng );
     COLL_BASE_COMPUTED_SEGCOUNT( SEG_SIZE, typelng, segcount );
-   int r = mca_coll_adapt_cuda_reduce_topo_generic(sbuf, rbuf, count, dtype, op, root, comm, module, coll_comm->cached_topochain, segcount, 0);
+  // int r = mca_coll_adapt_cuda_reduce_topo_generic(sbuf, rbuf, count, dtype, op, root, comm, module, coll_comm->cached_topochain, segcount, 0);
     //int r = mca_coll_adapt_cuda_reduce_topo_generic_cpu(sbuf, rbuf, count, dtype, op, root, comm, module, coll_comm->cached_topochain, segcount, 0);
   //  ompi_coll_base_topo_destroy_tree(&tree);
     return r;
@@ -1049,6 +1053,292 @@ static mca_coll_adapt_cuda_inbuf_t * to_inbuf(char * buf, int distance){
     return (mca_coll_adapt_cuda_inbuf_t *)(buf - distance);
 }
 
+static int send_cb(ompi_request_t *req){
+    mca_coll_adapt_cuda_reduce_context_t *context = (mca_coll_adapt_cuda_reduce_context_t *) req->req_complete_cb_data;
+    TEST("[%d]: send_cb, peer %d, seg_id %d\n", context->con->rank, context->peer, context->frag_id);
+    int err;
+    
+    opal_atomic_sub_32(&(context->con->ongoing_send), 1);
+    
+    //send a new segment
+    //list is not empty
+    opal_mutex_lock (context->con->mutex_recv_list);
+    mca_coll_adapt_cuda_item_t *item = get_next_ready_item(context->con->recv_list, context->con->tree->tree_nextsize);
+    opal_mutex_unlock (context->con->mutex_recv_list);
+    
+    if (item != NULL) {
+        //get new context item from free list
+        mca_coll_adapt_cuda_reduce_context_t * send_context = (mca_coll_adapt_cuda_reduce_context_t *) opal_free_list_wait(context->con->context_list);
+        if (context->con->tree->tree_nextsize > 0) {
+            send_context->buff = context->con->accumbuf[item->id];
+
+        }
+        else{
+            send_context->buff = context->buff + (item->id - context->frag_id) * context->con->segment_increment;
+        }
+        send_context->frag_id = item->id;
+        send_context->peer = context->peer;
+        send_context->con = context->con;
+        OBJ_RETAIN(context->con);
+        
+        opal_atomic_add_32(&(context->con->ongoing_send), 1);
+        
+        int send_count = send_context->con->seg_count;
+        if (item->id == (send_context->con->num_segs - 1)) {
+            send_count = send_context->con->count - item->id * send_context->con->seg_count;
+        }
+        
+        TEST("[%d]: In send_cb, create isend to seg %d, peer %d\n", send_context->con->rank, send_context->frag_id, send_context->peer);
+        
+        ompi_request_t *send_req;
+        err = MCA_PML_CALL(isend(send_context->buff, send_count, send_context->con->datatype, send_context->peer, send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
+        
+        //release the item
+        OBJ_RELEASE(item);
+        
+        //invoke send call back
+        ompi_request_set_callback(send_req, send_cb, send_context);
+    }
+    
+    opal_mutex_lock(context->con->mutex_num_sent);
+    int32_t num_sent = ++(context->con->num_sent_segs);
+    TEST("[%d]: In send_cb, root = %d, num_sent = %d, num_segs = %d\n", context->con->rank, context->con->tree->tree_root, num_sent, context->con->num_segs);
+    //check whether signal the condition, non root and sent all the segments
+    if (context->con->tree->tree_root != context->con->rank && num_sent == context->con->num_segs) {
+        opal_mutex_unlock(context->con->mutex_num_sent);
+        TEST("[%d]: Singal in send\n", ompi_comm_rank(context->con->comm));
+        int i;
+        ompi_request_t *temp_req = context->con->request;
+        opal_free_list_t * temp = context->con->context_list;
+        OBJ_RELEASE(context->con);
+        TEST("return context_list\n");
+        opal_free_list_return(temp, (opal_free_list_item_t*)context);
+        if (context->con->accumbuf != NULL) {
+            if (context->con->rank != context->con->root ) {
+                for (i=0; i<context->con->num_segs; i++) {
+                    if (context->con->accumbuf[i] != NULL) {
+                        opal_cuda_free_gpu_buffer(context->con->accumbuf[i], 0);
+                    }
+                    //opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)to_inbuf(context->con->accumbuf[i], context->con->distance));
+                }
+            }
+            free(context->con->accumbuf);
+        }
+        OBJ_RELEASE(context->con->recv_list);
+        for (i=0; i<context->con->num_segs; i++) {
+            OBJ_RELEASE(context->con->mutex_op_list[i]);
+        }
+        free(context->con->mutex_op_list);
+        OBJ_RELEASE(context->con->mutex_num_recv_segs);
+        OBJ_RELEASE(context->con->mutex_recv_list);
+        OBJ_RELEASE(context->con->mutex_num_sent);
+        if (context->con->tree->tree_nextsize > 0) {
+         //   OBJ_RELEASE(context->con->inbuf_list);
+            free(context->con->next_recv_segs);
+        }
+        OBJ_RELEASE(context->con->context_list);
+        OBJ_RELEASE(context->con);
+        ompi_request_complete(temp_req, 1);
+    }
+    else{
+        opal_mutex_unlock(context->con->mutex_num_sent);
+        opal_free_list_t * temp = context->con->context_list;
+        OBJ_RELEASE(context->con);
+        TEST("return context_list\n");
+        opal_free_list_return(temp, (opal_free_list_item_t*)context);
+    }
+   // no lock OPAL_THREAD_UNLOCK(req->req_lock);
+    req->req_free(&req);
+    return 1;
+}
+
+static int recv_cb(ompi_request_t *req){
+    mca_coll_adapt_cuda_reduce_context_t *context = (mca_coll_adapt_cuda_reduce_context_t *) req->req_complete_cb_data;
+    TEST("[%d]: recv_cb, peer %d, seg_id %d\n", context->con->rank, context->peer, context->frag_id);
+    
+    int err;
+    //atomic
+    int32_t new_id = opal_atomic_add_32(&(context->con->next_recv_segs[context->child_id]), 1);
+    
+    //receive new segment
+    if (new_id < context->con->num_segs) {
+        char * temp_recv_buf = NULL;
+        char * inbuf = NULL;
+        //set inbuf, if it it first child, recv on rbuf, else recv on inbuf
+        if (context->child_id == 0 && context->con->sbuf != MPI_IN_PLACE && context->con->root == context->con->rank) {
+            temp_recv_buf = (char *)context->con->rbuf + (ptrdiff_t)new_id * (ptrdiff_t)context->con->segment_increment;
+        }
+        else {
+            inbuf = opal_cuda_malloc_gpu_buffer(context->con->real_seg_size, 0);
+            temp_recv_buf = inbuf - context->con->lower_bound;
+        }
+        //get new context item from free list
+        mca_coll_adapt_cuda_reduce_context_t * recv_context = (mca_coll_adapt_cuda_reduce_context_t *) opal_free_list_wait(context->con->context_list);
+        recv_context->buff = temp_recv_buf;
+        recv_context->frag_id = new_id;
+        recv_context->child_id = context->child_id;
+        recv_context->peer = context->peer;
+        recv_context->con = context->con;
+        OBJ_RETAIN(context->con);
+        recv_context->inbuf = inbuf;
+        int recv_count = recv_context->con->seg_count;
+        if (new_id == (recv_context->con->num_segs - 1)) {
+            recv_count = recv_context->con->count - new_id * recv_context->con->seg_count;
+        }
+        TEST("[%d]: In recv_cb, create irecv for seg %d, peer %d, inbuf %p\n", context->con->rank, recv_context->frag_id, recv_context->peer, (void *)inbuf);
+        ompi_request_t *recv_req;
+        MCA_PML_CALL(irecv(temp_recv_buf, recv_count, recv_context->con->datatype, recv_context->peer, recv_context->frag_id, recv_context->con->comm, &recv_req));
+        //invoke recvive call back
+        ompi_request_set_callback(recv_req, recv_cb, recv_context);
+    }
+    
+    //do the op
+    int op_count = context->con->seg_count;
+    if (context->frag_id == (context->con->num_segs - 1)) {
+        op_count = context->con->count - context->frag_id * context->con->seg_count;
+    }
+    
+    int keep_inbuf = 0;
+    opal_mutex_lock(context->con->mutex_op_list[context->frag_id]);
+    if (context->con->accumbuf[context->frag_id] == NULL) {
+        if (context->inbuf == NULL) {
+            TEST("[%d]: set accumbuf to rbuf\n", context->con->rank);
+            context->con->accumbuf[context->frag_id] = context->buff;
+        }
+        else {
+            keep_inbuf = 1;
+            TEST("[%d]: set accumbuf to inbuf\n", context->con->rank);
+            context->con->accumbuf[context->frag_id] = context->inbuf - context->con->lower_bound;
+        }
+        //op sbuf and accmbuf to accumbuf
+       // ompi_op_reduce(context->con->op, context->con->sbuf + (ptrdiff_t)context->frag_id * (ptrdiff_t)context->con->segment_increment, context->con->accumbuf[context->frag_id], op_count, context->con->datatype);
+        opal_cuda_recude_op_sum_double(context->con->sbuf + (ptrdiff_t)context->frag_id * (ptrdiff_t)context->con->segment_increment, context->con->accumbuf[context->frag_id], op_count, NULL);
+
+    }
+    else {
+        if (context->inbuf == NULL) {
+            //op rbuf and accumbuf to rbuf
+            TEST("[%d]: op rbuf and accumbuf to rbuf\n", context->con->rank);
+            //ompi_op_reduce(context->con->op, context->con->accumbuf[context->frag_id], context->buff, op_count, context->con->datatype);
+            opal_cuda_recude_op_sum_double(context->con->accumbuf[context->frag_id], context->buff, op_count, NULL);
+            //free old accumbuf
+            opal_cuda_free_gpu_buffer(context->con->accumbuf[context->frag_id], 0);
+            //opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)to_inbuf(context->con->accumbuf[context->frag_id], context->con->distance));
+            //set accumbut to rbuf
+            context->con->accumbuf[context->frag_id] = context->buff;
+        }
+        else {
+            //op inbuf and accmbuf to accumbuf
+            TEST("[%d]: op inbuf and accmbuf to accumbuf\n", context->con->rank);
+            //ompi_op_reduce(context->con->op, context->inbuf->buff - context->con->lower_bound, context->con->accumbuf[context->frag_id], op_count, context->con->datatype);
+            opal_cuda_recude_op_sum_double(context->inbuf - context->con->lower_bound, context->con->accumbuf[context->frag_id], op_count, NULL);
+        }
+    }
+
+    opal_mutex_unlock(context->con->mutex_op_list[context->frag_id]);
+    
+    //set recv list
+    opal_mutex_lock (context->con->mutex_recv_list);
+    add_to_list(context->con->recv_list, context->frag_id);
+    opal_mutex_unlock (context->con->mutex_recv_list);
+    
+    //send to parent
+    if (context->con->rank != context->con->tree->tree_root && context->con->ongoing_send < SEND_NUM) {
+        //atomic
+        opal_mutex_lock (context->con->mutex_recv_list);
+        mca_coll_adapt_cuda_item_t *item = get_next_ready_item(context->con->recv_list, context->con->tree->tree_nextsize);
+        opal_mutex_unlock (context->con->mutex_recv_list);
+        
+        if (item != NULL) {
+            //get new context item from free list
+            mca_coll_adapt_cuda_reduce_context_t * send_context = (mca_coll_adapt_cuda_reduce_context_t *) opal_free_list_wait(context->con->context_list);
+            send_context->buff = context->con->accumbuf[context->frag_id];
+            send_context->frag_id = item->id;
+            send_context->peer = context->con->tree->tree_prev;
+            send_context->con = context->con;
+            OBJ_RETAIN(context->con);
+            //atomic
+            opal_atomic_add_32(&(context->con->ongoing_send), 1);
+            
+            int send_count = send_context->con->seg_count;
+            if (item->id == (send_context->con->num_segs - 1)) {
+                send_count = send_context->con->count - item->id * send_context->con->seg_count;
+            }
+            
+            TEST("[%d]: In recv_cb, create isend to seg %d, peer %d\n", send_context->con->rank, send_context->frag_id, send_context->peer);
+            
+            ompi_request_t *send_req;
+            err = MCA_PML_CALL(isend(send_context->buff, send_count, send_context->con->datatype, send_context->peer, send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
+            
+            //release the item
+            OBJ_RELEASE(item);
+            
+            //invoke send call back
+            ompi_request_set_callback(send_req, send_cb, send_context);
+        }
+    }
+    
+    opal_mutex_lock (context->con->mutex_num_recv_segs);
+    int num_recv_segs_t = ++(context->con->num_recv_segs);
+    TEST("[%d]: In recv_cb, root = %d, num_recv = %d, num_segs = %d, num_child = %d\n", context->con->rank, context->con->tree->tree_root, num_recv_segs_t, context->con->num_segs, context->con->tree->tree_nextsize);
+    //if this is root and has received all the segments
+    if (context->con->tree->tree_root == context->con->rank && num_recv_segs_t == context->con->num_segs * context->con->tree->tree_nextsize) {
+        opal_mutex_unlock (context->con->mutex_num_recv_segs);
+        int i;
+        TEST("[%d]: Singal in recv\n", ompi_comm_rank(context->con->comm));
+        ompi_request_t *temp_req = context->con->request;
+        if (!keep_inbuf && context->inbuf != NULL) {
+            opal_cuda_free_gpu_buffer(context->inbuf, 0);
+           // opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)context->inbuf);
+        }
+        opal_free_list_t * temp = context->con->context_list;
+        OBJ_RELEASE(context->con);
+        TEST("return context_list\n");
+        opal_free_list_return(temp, (opal_free_list_item_t*)context);
+        if (context->con->accumbuf != NULL) {
+            if (context->con->rank != context->con->root) {
+                for (i=0; i<context->con->num_segs; i++) {
+                    if (context->con->accumbuf[i]!= NULL) {
+                        opal_cuda_free_gpu_buffer(context->con->accumbuf[i], 0);
+                    }
+                //    opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)to_inbuf(context->con->accumbuf[i], context->con->distance));
+                }
+            }
+            free(context->con->accumbuf);
+        }
+        OBJ_RELEASE(context->con->recv_list);
+        for (i=0; i<context->con->num_segs; i++) {
+            OBJ_RELEASE(context->con->mutex_op_list[i]);
+        }
+        free(context->con->mutex_op_list);
+        OBJ_RELEASE(context->con->mutex_num_recv_segs);
+        OBJ_RELEASE(context->con->mutex_recv_list);
+        OBJ_RELEASE(context->con->mutex_num_sent);
+        if (context->con->tree->tree_nextsize > 0) {
+         //   OBJ_RELEASE(context->con->inbuf_list);
+            free(context->con->next_recv_segs);
+        }
+        OBJ_RELEASE(context->con->context_list);
+        OBJ_RELEASE(context->con);
+        ompi_request_complete(temp_req, 1);
+    }
+    else{
+        opal_mutex_unlock (context->con->mutex_num_recv_segs);
+        if (!keep_inbuf && context->inbuf != NULL) {
+            TEST("return inbuf\n");
+            opal_cuda_free_gpu_buffer(context->inbuf, 0);
+           // opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)context->inbuf);
+        }
+        opal_free_list_t * temp = context->con->context_list;
+        OBJ_RELEASE(context->con);
+        TEST("return context_list\n");
+        opal_free_list_return(temp, (opal_free_list_item_t*)context);
+    }
+    // no lock OPAL_THREAD_UNLOCK(req->req_lock);
+    req->req_free(&req);
+    return 1;
+}
+
 int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t* tree){
     
     ptrdiff_t extent, lower_bound, segment_increment;
@@ -1057,11 +1347,12 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
     int seg_count = count, num_segs, rank, recv_count, send_count, i, j, err, min, distance = 0;
     int32_t seg_index;
     int * next_recv_segs = NULL;
-    char **accumbuf = NULL;      //used to store the accumuate result
+    char **accumbuf = NULL;      //used to store the accumuate result, pointer to every segment
     opal_free_list_t * context_list; //a free list contain all the context of call backs
     opal_free_list_t * inbuf_list; //a free list contain all recv data
     opal_mutex_t * mutex_recv_list;
     opal_mutex_t * mutex_num_recv_segs;
+    opal_mutex_t * mutex_num_sent;
     opal_mutex_t ** mutex_op_list;
     opal_list_t * recv_list;     //a list to store the segments need to be sent
     
@@ -1074,7 +1365,6 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
     segment_increment = (ptrdiff_t)seg_count * extent;
     ompi_datatype_get_true_extent(dtype, &true_lower_bound, &true_extent);
     real_seg_size = true_extent + (ptrdiff_t)(seg_count - 1) * extent;
-    real_seg_size_cuda = real_seg_size;
     
     //set up free list
     context_list = OBJ_NEW(opal_free_list_t);
@@ -1089,22 +1379,24 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
                         NULL, 0, NULL, NULL, NULL);
     
     //not leaf
+    
     if (tree->tree_nextsize > 0) {
-        inbuf_list = OBJ_NEW(opal_free_list_t);
-        opal_free_list_init(inbuf_list,
-                            sizeof(mca_coll_adapt_cuda_inbuf_t) + real_seg_size,
-                            opal_cache_line_size,
-                            OBJ_CLASS(mca_coll_adapt_cuda_inbuf_t),
-                            0,opal_cache_line_size,
-                            FREE_LIST_NUM_INBUF_LIST,
-                            FREE_LIST_MAX_INBUF_LIST,
-                            FREE_LIST_INC_INBUF_LIST,
-                            NULL, 0, NULL, NULL, NULL);
+        // inbuf_list = OBJ_NEW(opal_free_list_t);
+        // opal_free_list_init(inbuf_list,
+        //                     sizeof(mca_coll_adapt_cuda_inbuf_t),
+        //                     opal_cache_line_size,
+        //                     OBJ_CLASS(mca_coll_adapt_cuda_inbuf_t),
+        //                     0,opal_cache_line_size,
+        //                     FREE_LIST_NUM_INBUF_LIST,
+        //                     FREE_LIST_MAX_INBUF_LIST,
+        //                     FREE_LIST_INC_INBUF_LIST,
+        //                     NULL, 0, NULL, NULL, NULL);
         //set up next_recv_segs
         next_recv_segs = (int32_t *)malloc(sizeof(int32_t) * tree->tree_nextsize);
-        mca_coll_adapt_cuda_inbuf_t * temp_inbuf = (mca_coll_adapt_cuda_inbuf_t *) opal_free_list_wait(inbuf_list);
-        distance = (char *)temp_inbuf->buff - (char *)temp_inbuf; //address of inbuf->buff to address of inbuf
-        opal_free_list_return(inbuf_list, (opal_free_list_item_t*)temp_inbuf);
+        inbuf_list = NULL;
+        // mca_coll_adapt_cuda_inbuf_t * temp_inbuf = (mca_coll_adapt_cuda_inbuf_t *) opal_free_list_wait(inbuf_list);
+        // distance = (char *)temp_inbuf->buff - lower_bound - (char *)temp_inbuf; //address of inbuf->buff to address of inbuf
+        // opal_free_list_return(inbuf_list, (opal_free_list_item_t*)temp_inbuf);
     }
     else {
         inbuf_list = NULL;
@@ -1130,10 +1422,9 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
     for (i=0; i<num_segs; i++) {
         mutex_op_list[i] = OBJ_NEW(opal_mutex_t);
     }
-    
+    mutex_num_sent = OBJ_NEW(opal_mutex_t);
     //create recv_list
     recv_list = OBJ_NEW(opal_list_t);
-    
     
     //Set constant context for send and recv call back
     mca_coll_adapt_cuda_constant_reduce_context_t *con = OBJ_NEW(mca_coll_adapt_cuda_constant_reduce_context_t);
@@ -1151,6 +1442,7 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
     con->next_recv_segs = next_recv_segs;
     con->mutex_recv_list = mutex_recv_list;
     con->mutex_num_recv_segs = mutex_num_recv_segs;
+    con->mutex_num_sent = mutex_num_sent;
     con->mutex_op_list = mutex_op_list;
     con->op = op;
     con->tree = tree;
@@ -1159,22 +1451,15 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
     con->lower_bound = lower_bound;
     con->ongoing_send = 0;
     con->sbuf = (char *)sbuf;
-    
+    con->rbuf = (char *)rbuf;
+    con->root = root;
+    con->distance = distance;
+    con->real_seg_size = real_seg_size;
     // non leaf nodes
     if (tree->tree_nextsize > 0) {
         //set accumbuf
         accumbuf = (char **) malloc (sizeof(char*) * num_segs);
-        if (root == rank){
-            if (sbuf != MPI_IN_PLACE) {
-       /*         TIMER_DATA_TYPE tstart, tend;
-                long total_time;
-                GET_TIME(tstart);
-                ompi_datatype_copy_content_same_ddt(dtype, count, (char*)rbuf, (char*)sbuf);
-                GET_TIME( tend );
-                total_time = ELAPSED_TIME( tstart, tend );
-                printf("memcpy %ld us", total_time);*/
-
-            }
+        if (root == rank && sbuf == MPI_IN_PLACE) {
             for (i=0; i<num_segs; i++) {
                 accumbuf[i] = (char *)rbuf + (ptrdiff_t)i * (ptrdiff_t)segment_increment;
             }
@@ -1207,36 +1492,37 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
                     if( seg_index == (num_segs-1) ){
                         recv_count = count - (ptrdiff_t)seg_count * (ptrdiff_t)seg_index;
                     }
-                    //get inbuf
-                    //wei mca_coll_adapt_cuda_inbuf_t * inbuf = (mca_coll_adapt_cuda_inbuf_t *) opal_free_list_wait(inbuf_list);
-                    char *inbuf = NULL;
-                    if (rank == root && i == 0) {
-                        inbuf = accumbuf[seg_index];
-                    } else {
-                        inbuf = (char*)opal_cuda_malloc_gpu_buffer(real_seg_size_cuda, 0);
+                    char * temp_recv_buf = NULL;
+                    char * inbuf = NULL;
+                    //set inbuf, if it it first child, recv on rbuf, else recv on inbuf
+                    if (i==0 && sbuf != MPI_IN_PLACE && root == rank) {
+                        temp_recv_buf = (char *)rbuf + (ptrdiff_t)j * (ptrdiff_t)segment_increment;
+                    }
+                    else {
+                       // inbuf = (mca_coll_adapt_cuda_inbuf_t *) opal_free_list_wait(inbuf_list);
+                        inbuf = opal_cuda_malloc_gpu_buffer(real_seg_size, 0);
+                        temp_recv_buf = inbuf - lower_bound;
                     }
                     //get context
                     mca_coll_adapt_cuda_reduce_context_t * context = (mca_coll_adapt_cuda_reduce_context_t *) opal_free_list_wait(context_list);
-                    context->buff = NULL;
+                    context->buff = temp_recv_buf;
                     context->frag_id = seg_index;
                     context->child_id = i;              //the id of peer in in the tree
                     context->peer = tree->tree_next[i];   //the actural rank of the peer
                     context->con = con;
                     OBJ_RETAIN(con);
-                    context->inbuf = (mca_coll_adapt_cuda_inbuf_t *)inbuf;
+                    context->inbuf = inbuf;
                     
-                    TEST("[%d]: In reduce, create irecv for seg %d, peer %d, recv_count %d\n", context->con->rank, context->frag_id, context->peer, recv_count);
+                    TEST("[%d]: In reduce, create irecv for seg %d, peer %d, recv_count %d, inbuf %p\n", context->con->rank, context->frag_id, context->peer, recv_count, (void *)inbuf);
                     
                     //create a recv request
                     ompi_request_t *recv_req;
-                    err = MCA_PML_CALL(irecv(inbuf - lower_bound, recv_count, dtype, tree->tree_next[i], seg_index, comm, &recv_req));
+                    err = MCA_PML_CALL(irecv(temp_recv_buf, recv_count, dtype, tree->tree_next[i], seg_index, comm, &recv_req));
                     if (MPI_SUCCESS != err) {
                         return err;
                     }
                     //invoke recv call back
-                    if(!ompi_request_set_callback(recv_req, recv_cb, context)) {
-                        recv_cb(recv_req);
-                    }
+                    ompi_request_set_callback(recv_req, recv_cb, context);
                 }
             }
         }
@@ -1259,6 +1545,7 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
         else{
             min = SEND_NUM;
         }
+        con->accumbuf = accumbuf;
         for(i = 0; i < min; i++) {
             opal_mutex_lock (mutex_recv_list);
             item = get_next_ready_item(recv_list, tree->tree_nextsize);
@@ -1274,29 +1561,23 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
                 context->peer = tree->tree_prev;   //the actural rank of the peer
                 context->con = con;
                 OBJ_RETAIN(con);
+                context->inbuf = NULL;
+                
                 //atomic
                 opal_atomic_add_32(&(context->con->ongoing_send), 1);
-                TEST("[%d]: In reduce, create isend to seg %d, peer %d, send_count %d\n", context->con->rank, context->frag_id, context->peer);
+                TEST("[%d]: In reduce, create isend to seg %d, peer %d, send_count %d\n", context->con->rank, context->frag_id, context->peer, send_count);
                 
                 //create send request
                 ompi_request_t *send_req;
-                err = MCA_PML_CALL( isend(context->buff, send_count, dtype,
-                                          tree->tree_prev,
-                                          context->frag_id,
-                                          MCA_PML_BASE_SEND_SYNCHRONOUS, comm,
-                                          &send_req) );
-                
+                err = MCA_PML_CALL( isend(context->buff, send_count, dtype, tree->tree_prev, context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, comm, &send_req) );
                 if (MPI_SUCCESS != err) {
                     return err;
                 }
-                
                 //release the item
                 OBJ_RELEASE(item);
                 
                 //invoke send call back
-                if(!ompi_request_set_callback(send_req, send_cb, context)) {
-                    send_cb(send_req);
-                }
+                ompi_request_set_callback(send_req, send_cb, context);
             }
         }
         
@@ -1304,32 +1585,10 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
     
     ompi_request_wait(&temp_request, MPI_STATUS_IGNORE);
     
-    if (accumbuf != NULL) {
-        if (rank != root) {
-            for (i=0; i<num_segs; i++) {
-                if (accumbuf[i] != NULL) {
-                    opal_cuda_free_gpu_buffer(accumbuf[i], 0);
-                }
-            }
-        }
-        free(accumbuf);
-    }
-    OBJ_RELEASE(con);
-    OBJ_RELEASE(recv_list);
-    for (i=0; i<num_segs; i++) {
-        OBJ_RELEASE(mutex_op_list[i]);
-    }
-    free(mutex_op_list);
-    OBJ_RELEASE(mutex_num_recv_segs);
-    OBJ_RELEASE(mutex_recv_list);
-    if (tree->tree_nextsize > 0) {
-        OBJ_RELEASE(inbuf_list);
-        free(next_recv_segs);
-    }
-    OBJ_RELEASE(context_list);
     return MPI_SUCCESS;
 }
 
+#if 0
 int mca_coll_adapt_cuda_reduce_chain_pipeline(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t* tree){
     
     ptrdiff_t extent, lower_bound, segment_increment;
@@ -1593,3 +1852,4 @@ int mca_coll_adapt_cuda_reduce_chain_pipeline(const void *sbuf, void *rbuf, int 
     OBJ_RELEASE(context_list);
     return MPI_SUCCESS;
 }
+#endif
