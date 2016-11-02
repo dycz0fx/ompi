@@ -67,6 +67,7 @@ OPAL_DECLSPEC void *mca_common_cuda_get_dtoh_stream(void);
 OPAL_DECLSPEC void *mca_common_cuda_get_htod_stream(void);
 OPAL_DECLSPEC void *mca_common_cuda_get_nccl_stream(void);
 OPAL_DECLSPEC void mca_common_cuda_sync_nccl_stream(void);
+OPAL_DECLSPEC void *mca_common_cuda_get_memcpy_stream(void);
 
 OPAL_DECLSPEC int progress_one_cuda_ipc_event(struct mca_btl_base_descriptor_t **);
 OPAL_DECLSPEC int progress_one_cuda_dtoh_event(struct mca_btl_base_descriptor_t **);

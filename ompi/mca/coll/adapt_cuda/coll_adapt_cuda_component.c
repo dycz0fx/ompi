@@ -18,6 +18,8 @@
 #include "coll_adapt_cuda_mpool.h"
 #include "coll_adapt_cuda_nccl.h"
 #include "coll_adapt_cuda_algorithms.h"
+#include "coll_adapt_cuda_context.h"
+#include "opal/mca/common/cuda/common_cuda.h"
 
 
 /*
@@ -262,6 +264,16 @@ static int adapt_cuda_register(void)
 
 static int coll_adapt_cuda_progress()
 {
-    coll_adapt_cuda_bcast_progress();
+    char *context;
+    while (1 == progress_one_cuda_memcpy_event((void **)&context)) {
+        if (context != NULL) {
+            int *flag = (int *)(context + sizeof(opal_free_list_item_t));
+            if (*flag == COLL_ADAPT_CUDA_CONTEXT_FLAGS_BCAST) {
+                mca_coll_adapt_cuda_bcast_context_t *bcast_context = (mca_coll_adapt_cuda_bcast_context_t *)context;
+                assert(bcast_context->cuda_callback != NULL);
+                bcast_context->cuda_callback(bcast_context);
+            }
+        }
+    }
     return OMPI_SUCCESS;
 }

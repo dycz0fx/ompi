@@ -1636,6 +1636,10 @@ void mca_common_cuda_sync_nccl_stream(void) {
     cuFunc.cuStreamSynchronize(ncclStream);
 }
 
+void *mca_common_cuda_get_memcpy_stream(void) {
+    return (void *)memcpyStream;
+}
+
 
 /*
  * Function is called every time progress is called with the sm BTL.  If there

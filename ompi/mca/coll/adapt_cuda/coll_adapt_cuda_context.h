@@ -10,6 +10,9 @@
 #define CPU_BUFFER_MEMCPY_DONE  1
 #define CPU_BUFFER_MEMCPY_NOT_DONE  0
 
+#define COLL_ADAPT_CUDA_CONTEXT_FLAGS_BCAST     0x2
+#define COLL_ADAPT_CUDA_CONTEXT_FLAGS_REDUCE     0x4
+
 /* bcast constant context in bcast context */
 struct mca_coll_adapt_cuda_constant_bcast_context_s {
     opal_object_t  super;
@@ -44,6 +47,7 @@ typedef int (*mca_coll_adapt_cuda_bcast_cuda_callback_fn_t)(mca_coll_adapt_cuda_
 
 struct mca_coll_adapt_cuda_bcast_context_s {
     opal_free_list_item_t super;
+    int flags;
     char *buff;
     int frag_id;
     int child_id;
@@ -138,6 +142,7 @@ OBJ_CLASS_DECLARATION(mca_coll_adapt_cuda_constant_reduce_context_t);
 //reduce context
 struct mca_coll_adapt_cuda_reduce_context_s {
     opal_free_list_item_t super;
+    int flags;
     char *buff;
     int frag_id;
     int child_id;

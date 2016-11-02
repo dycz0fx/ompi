@@ -416,6 +416,7 @@ static int recv_cb_cpu(ompi_request_t *req){
                         ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, context->buff, context->con->cpu_buff_list[context->frag_id]);
                         send_context->send_count = send_count;
                         send_context->buff = context->buff;
+                        send_context->flags = COLL_ADAPT_CUDA_CONTEXT_FLAGS_BCAST;
                         send_context->cuda_callback = bcast_send_context_async_memcpy_callback;
                         mca_common_cuda_record_memcpy_event("memcpy in coll_adapt_cuda_bcast", (void *)send_context);
                         context->con->datatype->super.flags &= ~OPAL_DATATYPE_FLAG_GPU_ASYNC;
@@ -442,6 +443,7 @@ static int recv_cb_cpu(ompi_request_t *req){
                             ompi_datatype_copy_content_same_ddt(context->con->datatype, send_count, context->buff, context->con->cpu_buff_list[context->frag_id]);
                             send_context->send_count = send_count;
                             send_context->buff = context->buff;
+                            send_context->flags = COLL_ADAPT_CUDA_CONTEXT_FLAGS_BCAST;
                             send_context->cuda_callback = bcast_send_context_async_memcpy_callback;
                             mca_common_cuda_record_memcpy_event("memcpy in coll_adapt_cuda_bcast", (void *)send_context);
                             context->con->datatype->super.flags &= ~OPAL_DATATYPE_FLAG_GPU_ASYNC;
@@ -531,7 +533,6 @@ int mca_coll_adapt_cuda_bcast(void *buff, int count, struct ompi_datatype_t *dat
         int len = snprintf(commId.internal, NCCL_UNIQUE_ID_BYTES, "nccl-%d-%d", pid, cid);
         int size = ompi_comm_size(comm);
         int rank = ompi_comm_rank(comm);
-        printf("init nccl comm\n");
        // coll_adapt_cuda_nccl_comm_init_rank(&nccl_comm, size, commId, rank);
     //return mca_coll_adapt_cuda_bcast_pipeline(buff, count, datatype, root, comm, module);
         if (1 == opal_cuda_is_gpu_buffer(buff)) {
@@ -1256,11 +1257,15 @@ static int bcast_send_context_async_memcpy_update_ref_count_callback(mca_coll_ad
 int coll_adapt_cuda_bcast_progress()
 {
  //   printf("i am in adapt cuda progress\n");
-    mca_coll_adapt_cuda_bcast_context_t *send_context;
-    while (1 == progress_one_cuda_memcpy_event((void **)&send_context)) {
-        if (send_context != NULL) {
-            assert(send_context->cuda_callback != NULL);
-            send_context->cuda_callback(send_context);
+    char *context;
+    while (1 == progress_one_cuda_memcpy_event((void **)&context)) {
+        if (context != NULL) {
+            int *flag = (int *)(context + sizeof(opal_free_list_item_t));
+            if (*flag == COLL_ADAPT_CUDA_CONTEXT_FLAGS_BCAST) {
+                mca_coll_adapt_cuda_bcast_context_t *bcast_context = (mca_coll_adapt_cuda_bcast_context_t *)context;
+                assert(bcast_context->cuda_callback != NULL);
+                bcast_context->cuda_callback(bcast_context);
+            }
         }
     }
     return OMPI_SUCCESS;

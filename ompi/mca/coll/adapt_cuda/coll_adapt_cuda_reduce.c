@@ -25,6 +25,9 @@
 #define FREE_LIST_INC_INBUF_LIST 10    //The incresment of the context free list
 #define TEST printfno
 
+
+int coll_adapt_cuda_reduce_use_sync = 0;
+
 //Can only work on commutative op
 
 static void printfno(){
@@ -294,7 +297,6 @@ static int recv_cb(ompi_request_t *req){
 #endif
 
 int mca_coll_adapt_cuda_reduce(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
-    printf("reduce cuda pipeline\n");
     //return mca_coll_adapt_cuda_reduce_pipeline(sbuf, rbuf, count, dtype, op, root, comm, module);
      return mca_coll_adapt_cuda_reduce_topoaware_chain(sbuf, rbuf, count, dtype, op, root, comm, module);
 }
@@ -1365,6 +1367,8 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
     segment_increment = (ptrdiff_t)seg_count * extent;
     ompi_datatype_get_true_extent(dtype, &true_lower_bound, &true_extent);
     real_seg_size = true_extent + (ptrdiff_t)(seg_count - 1) * extent;
+    
+    if (rank == root) printf("reduce cuda generic\n");
     
     //set up free list
     context_list = OBJ_NEW(opal_free_list_t);
