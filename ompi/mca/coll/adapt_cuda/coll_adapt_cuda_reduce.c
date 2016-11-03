@@ -27,8 +27,8 @@
 #define TEST printfno
 
 
-int coll_adapt_cuda_reduce_use_sync = 0;
-int coll_adapt_cuda_use_cpu_buff = 0;
+int coll_adapt_cuda_reduce_use_sync = 1;
+int coll_adapt_cuda_use_cpu_buff = 1;
 
 //Can only work on commutative op
 
@@ -1373,7 +1373,8 @@ static int recv_cb(ompi_request_t *req){
     add_to_list(context->con->recv_list, context->frag_id, buff_to_free, buff_to_free_cpu_index, &op_item);
     
     /* node and socket leader , copy data back to cpu and send after all op is done */
-    if (op_item->count == context->con->tree->tree_nextsize && coll_adapt_cuda_use_cpu_buff && (context->con->tree->topo_flags == 1 || context->con->tree->topo_flags == 0)) {
+    if (op_item->count == context->con->tree->tree_nextsize && coll_adapt_cuda_use_cpu_buff && (context->con->tree->topo_flags == 1 || context->con->tree->topo_flags == 0) && 
+        (context->con->rank != context->con->root) ) {
         
         if (context->con->cpu_buff_list[op_item->id * context->con->tree->tree_nextsize + 0] == NULL) {
             if (context->con->tree->topo_flags == 0 && context->con->tree->tree_nextsize > 1) assert(0);
