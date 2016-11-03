@@ -132,6 +132,7 @@ struct mca_coll_adapt_cuda_constant_reduce_context_s {
     int root;
     int distance;   //address of inbuf->buff to address of inbuf
     size_t real_seg_size;
+    char **cpu_buff_list;
 };
 
 typedef struct mca_coll_adapt_cuda_constant_reduce_context_s mca_coll_adapt_cuda_constant_reduce_context_t;
