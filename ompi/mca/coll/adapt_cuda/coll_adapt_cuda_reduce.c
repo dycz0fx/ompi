@@ -1136,14 +1136,10 @@ static int send_cb(ompi_request_t *req){
             }
         } else {
             temp_send_buf = send_context->buff;
-            /* node and socket leader , copy data back to cpu and send */
+            /* node and socket leader , send from cpu */
             if (coll_adapt_cuda_use_cpu_buff && (send_context->con->tree->topo_flags == 1 || send_context->con->tree->topo_flags == 0)) {
-                if (send_context->con->cpu_buff_list[send_context->frag_id * send_context->con->tree->tree_nextsize + 0] == NULL) {
-                    if (send_context->con->tree->topo_flags == 0 && send_context->con->tree->tree_nextsize > 1) assert(0);
-                    send_context->con->cpu_buff_list[send_context->frag_id * send_context->con->tree->tree_nextsize + 0] = mpool->mpool_alloc(mpool, sizeof(char)* send_context->con->real_seg_size, 0, 0);
-                }
                 temp_send_buf = send_context->con->cpu_buff_list[send_context->frag_id * send_context->con->tree->tree_nextsize + 0];
-                ompi_datatype_copy_content_same_ddt(send_context->con->datatype, send_count, temp_send_buf, (char*)send_context->buff);
+                assert(temp_send_buf != NULL);
             }
             TEST("[%d]: In send_cb, create isend to seg %d, peer %d\n", send_context->con->rank, send_context->frag_id, send_context->peer);
         
@@ -1353,14 +1349,24 @@ static int recv_cb(ompi_request_t *req){
     mca_coll_adapt_cuda_item_t *op_item = NULL;
     add_to_list(context->con->recv_list, context->frag_id, buff_to_free, &op_item);
     
-    /* node and socket leader , copy data back to cpu and send */
-    if (coll_adapt_cuda_use_cpu_buff && (send_context->con->tree->topo_flags == 1 || send_context->con->tree->topo_flags == 0)) {
+    /* node and socket leader , copy data back to cpu and send after all op is done */
+    if (op_item->count == context->con->tree->tree_nextsize && coll_adapt_cuda_use_cpu_buff && (context->con->tree->topo_flags == 1 || context->con->tree->topo_flags == 0)) {
         
-        if (send_context->con->cpu_buff_list[op_item->id * send_context->con->tree->tree_nextsize + 0] == NULL) {
-            if (send_context->con->tree->topo_flags == 0 && send_context->con->tree->tree_nextsize > 1) assert(0);
-            send_context->con->cpu_buff_list[send_context->frag_id * send_context->con->tree->tree_nextsize + 0] = mpool->mpool_alloc(mpool, sizeof(char)* send_context->con->real_seg_size, 0, 0);
+        if (context->con->cpu_buff_list[op_item->id * context->con->tree->tree_nextsize + 0] == NULL) {
+            if (context->con->tree->topo_flags == 0 && context->con->tree->tree_nextsize > 1) assert(0);
+            context->con->cpu_buff_list[op_item->id * context->con->tree->tree_nextsize + 0] = mpool->mpool_alloc(mpool, sizeof(char)* context->con->real_seg_size, 0, 0);
         }
-        ompi_datatype_copy_content_same_ddt(send_context->con->datatype, send_count, context->con->cpu_buff_list[send_context->frag_id * context->con->tree->tree_nextsize + 0], (char*)send_context->buff);
+        int copy_count = context->con->seg_count;
+        if (op_item->id == (context->con->num_segs - 1)) {
+            copy_count = context->con->count - op_item->id * context->con->seg_count;
+        }
+        if (0 == coll_adapt_cuda_reduce_use_sync) {
+            context->con->datatype->super.flags |= OPAL_DATATYPE_FLAG_GPU_ASYNC;
+            ompi_datatype_copy_content_same_ddt(context->con->datatype, copy_count, context->con->cpu_buff_list[op_item->id * context->con->tree->tree_nextsize + 0], (char*)context->con->accumbuf[context->frag_id]);
+            context->con->datatype->super.flags &= ~OPAL_DATATYPE_FLAG_GPU_ASYNC;
+        } else {
+            ompi_datatype_copy_content_same_ddt(context->con->datatype, copy_count, context->con->cpu_buff_list[op_item->id * context->con->tree->tree_nextsize + 0], (char*)context->con->accumbuf[context->frag_id]);
+        }
     } 
     
     // if use async and all children have been received and op, record event */ 
@@ -1417,15 +1423,12 @@ static int recv_cb(ompi_request_t *req){
                 }
             } else {
                 temp_send_buf = send_context->buff;
-                /* node and socket leader , copy data back to cpu and send */
+                /* node and socket leader , send from cpu */
                 if (coll_adapt_cuda_use_cpu_buff && (send_context->con->tree->topo_flags == 1 || send_context->con->tree->topo_flags == 0)) {
-                    if (send_context->con->cpu_buff_list[send_context->frag_id * send_context->con->tree->tree_nextsize + 0] == NULL) {
-                        if (send_context->con->tree->topo_flags == 0 && send_context->con->tree->tree_nextsize > 1) assert(0);
-                        send_context->con->cpu_buff_list[send_context->frag_id * send_context->con->tree->tree_nextsize + 0] = mpool->mpool_alloc(mpool, sizeof(char)* send_context->con->real_seg_size, 0, 0);
-                    }
                     temp_send_buf = send_context->con->cpu_buff_list[send_context->frag_id * send_context->con->tree->tree_nextsize + 0];
-                    ompi_datatype_copy_content_same_ddt(send_context->con->datatype, send_count, temp_send_buf, (char*)send_context->buff);
-                }            
+                    assert(temp_send_buf != NULL);
+                }
+          
                 TEST("[%d]: In recv_cb, create isend to seg %d, peer %d\n", send_context->con->rank, send_context->frag_id, send_context->peer);
             
                 ompi_request_t *send_req;
