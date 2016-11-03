@@ -265,6 +265,17 @@ static int adapt_cuda_register(void)
 static int coll_adapt_cuda_progress()
 {
     char *context;
+    while (1 == progress_one_cuda_op_event((void **)&context)) {
+        if (context != NULL) {
+            int *flag = (int *)(context + sizeof(opal_free_list_item_t));
+            if (*flag == COLL_ADAPT_CUDA_CONTEXT_FLAGS_REDUCE) {
+              //  opal_output(0, "reduce call back\n");
+                mca_coll_adapt_cuda_reduce_context_t *reduce_context = (mca_coll_adapt_cuda_reduce_context_t *)context;
+                assert(reduce_context->cuda_callback != NULL);
+                reduce_context->cuda_callback(reduce_context);
+            }
+        }
+    }
     while (1 == progress_one_cuda_memcpy_event((void **)&context)) {
         if (context != NULL) {
             int *flag = (int *)(context + sizeof(opal_free_list_item_t));

@@ -42,6 +42,8 @@ static void printfno(){
 
 static int reduce_send_context_async_op_callback(mca_coll_adapt_cuda_reduce_context_t *send_context);
 
+static int reduce_async_op_free_inbuf(mca_coll_adapt_cuda_item_t * item, int rank);
+
 
 static mca_coll_adapt_cuda_item_t * get_next_ready_item(opal_list_t* list, int num_children){
     mca_coll_adapt_cuda_item_t *item;
@@ -59,7 +61,7 @@ static mca_coll_adapt_cuda_item_t * get_next_ready_item(opal_list_t* list, int n
     return NULL;
 }
 
-static int add_to_list(opal_list_t* list, int id, void *buff_to_free){
+static int add_to_list(opal_list_t* list, int id, void *buff_to_free, mca_coll_adapt_cuda_item_t **op_item){
     mca_coll_adapt_cuda_item_t *item;
     int ret = 0;
     for(item = (mca_coll_adapt_cuda_item_t *) opal_list_get_first(list);
@@ -68,6 +70,7 @@ static int add_to_list(opal_list_t* list, int id, void *buff_to_free){
         if (item->id == id) {
             (item->count)++;
             item->buff_to_free[item->count-1] = buff_to_free;
+            *op_item = item;
             ret = 1;
             break;
         }
@@ -77,6 +80,8 @@ static int add_to_list(opal_list_t* list, int id, void *buff_to_free){
         item->id = id;
         item->count = 1;
         item->buff_to_free[item->count-1] = buff_to_free;
+        item->op_event = NULL;
+        *op_item = item;
         opal_list_append(list, (opal_list_item_t *)item);
         ret = 2;
     }
@@ -1096,10 +1101,26 @@ static int send_cb(ompi_request_t *req){
         }
         
         if (0 == coll_adapt_cuda_reduce_use_sync && context->con->tree->tree_nextsize > 0) {
-            send_context->flags = COLL_ADAPT_CUDA_CONTEXT_FLAGS_REDUCE;
-            send_context->cuda_callback = reduce_send_context_async_op_callback;
-            send_context->buff_to_free_item = item;
-            mca_common_cuda_record_memcpy_event("op in coll_adapt_cuda_reduce", (void *)send_context);
+            
+            if (0 == mca_common_cuda_query_op_event_item(item->op_event)) {
+             //   opal_output(0, "event %p is not done, record it\n", item->op_event);
+                send_context->flags = COLL_ADAPT_CUDA_CONTEXT_FLAGS_REDUCE;
+                send_context->cuda_callback = reduce_send_context_async_op_callback;
+                send_context->buff_to_free_item = item;
+                mca_common_cuda_save_op_event("op in coll_adapt_cuda_reduce", item->op_event, (void *)send_context);
+            } else {
+            //    opal_output(0, "event %p is done, not record it\n", item->op_event);
+                mca_common_cuda_return_op_event_item(item->op_event);
+                reduce_async_op_free_inbuf(item, context->con->rank);
+                ompi_request_t *send_req;
+                err = MCA_PML_CALL(isend(send_context->buff, send_count, send_context->con->datatype, send_context->peer, send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
+        
+                //release the item
+                OBJ_RELEASE(item);
+        
+                //invoke send call back
+                ompi_request_set_callback(send_req, send_cb, send_context);
+            }
         } else {
             TEST("[%d]: In send_cb, create isend to seg %d, peer %d\n", send_context->con->rank, send_context->frag_id, send_context->peer);
         
@@ -1278,7 +1299,14 @@ static int recv_cb(ompi_request_t *req){
     
     //set recv list
     opal_mutex_lock (context->con->mutex_recv_list);
-    add_to_list(context->con->recv_list, context->frag_id, buff_to_free);
+    mca_coll_adapt_cuda_item_t *op_item = NULL;
+    add_to_list(context->con->recv_list, context->frag_id, buff_to_free, &op_item);
+    
+    // if use async and all children have been received and op, record event */ 
+    if (op_item->count == context->con->tree->tree_nextsize && 0 == coll_adapt_cuda_reduce_use_sync && context->con->rank != context->con->root) {
+        op_item->op_event = mca_common_cuda_get_op_event_item();
+        mca_common_cuda_record_op_event_item(op_item->op_event);
+    }
     opal_mutex_unlock (context->con->mutex_recv_list);
     
     //send to parent
@@ -1305,10 +1333,25 @@ static int recv_cb(ompi_request_t *req){
             }
             
             if (0 == coll_adapt_cuda_reduce_use_sync) {
-                send_context->flags = COLL_ADAPT_CUDA_CONTEXT_FLAGS_REDUCE;
-                send_context->cuda_callback = reduce_send_context_async_op_callback;
-                send_context->buff_to_free_item = item;
-                mca_common_cuda_record_memcpy_event("op in coll_adapt_cuda_reduce", (void *)send_context);
+                if (0 == mca_common_cuda_query_op_event_item(item->op_event)) {
+               //     opal_output(0, "event %p is not done, record it\n", item->op_event);
+                    send_context->flags = COLL_ADAPT_CUDA_CONTEXT_FLAGS_REDUCE;
+                    send_context->cuda_callback = reduce_send_context_async_op_callback;
+                    send_context->buff_to_free_item = item;
+                    mca_common_cuda_save_op_event("op in coll_adapt_cuda_reduce", item->op_event, (void *)send_context);
+                } else {
+            //        opal_output(0, "event %p is done, not record it\n", item->op_event);
+                    mca_common_cuda_return_op_event_item(item->op_event);
+                    reduce_async_op_free_inbuf(item, context->con->rank);
+                    ompi_request_t *send_req;
+                    err = MCA_PML_CALL(isend(send_context->buff, send_count, send_context->con->datatype, send_context->peer, send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
+            
+                    //release the item
+                    OBJ_RELEASE(item);
+            
+                    //invoke send call back
+                    ompi_request_set_callback(send_req, send_cb, send_context);
+                }
             } else {            
                 TEST("[%d]: In recv_cb, create isend to seg %d, peer %d\n", send_context->con->rank, send_context->frag_id, send_context->peer);
             
@@ -1654,18 +1697,26 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
     return MPI_SUCCESS;
 }
 
-static int reduce_send_context_async_op_callback(mca_coll_adapt_cuda_reduce_context_t *send_context)
+static int reduce_async_op_free_inbuf(mca_coll_adapt_cuda_item_t * item, int rank)
 {
-    ompi_request_t *send_req;
-    mca_coll_adapt_cuda_item_t *item = send_context->buff_to_free_item; 
     int i;
-    for (i == 0; i < item->count; i++) {
+    for (i = 0; i < item->count; i++) {
         if (item->buff_to_free[i] != NULL) {
-            if (send_context->con->rank == 4) opal_output(0, " buff free i %d, %p\n", i, item->buff_to_free[i]);
+            if (rank == 4) opal_output(0, " buff free i %d, %p\n", i, item->buff_to_free[i]);
             opal_cuda_free_gpu_buffer(item->buff_to_free[i], 0);
             item->buff_to_free[i] = NULL;
         }
     }
+}
+
+static int reduce_send_context_async_op_callback(mca_coll_adapt_cuda_reduce_context_t *send_context)
+{
+    ompi_request_t *send_req;
+    mca_coll_adapt_cuda_item_t *item = send_context->buff_to_free_item; 
+    reduce_async_op_free_inbuf(item, send_context->con->rank);
+    
+    assert(item->op_event != NULL);
+    mca_common_cuda_return_op_event_item(item->op_event);
     
     int send_count = send_context->con->seg_count;
     if (item->id == (send_context->con->num_segs - 1)) {

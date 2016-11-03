@@ -5,6 +5,7 @@ struct mca_coll_adapt_cuda_item_s {
     int id;     //fragment id
     int count;  //have received from how many children
     void *buff_to_free[3];
+    void *op_event;
 };
 
 typedef struct mca_coll_adapt_cuda_item_s mca_coll_adapt_cuda_item_t;
