@@ -140,6 +140,10 @@ OBJ_CLASS_DECLARATION(mca_coll_adapt_cuda_constant_reduce_context_t);
 
 
 //reduce context
+typedef struct mca_coll_adapt_cuda_reduce_context_s mca_coll_adapt_cuda_reduce_context_t;
+
+typedef int (*mca_coll_adapt_cuda_reduce_cuda_callback_fn_t)(mca_coll_adapt_cuda_reduce_context_t *context);
+
 struct mca_coll_adapt_cuda_reduce_context_s {
     opal_free_list_item_t super;
     int flags;
@@ -149,9 +153,9 @@ struct mca_coll_adapt_cuda_reduce_context_s {
     int peer;
     mca_coll_adapt_cuda_constant_reduce_context_t * con;
     char *inbuf;  //only used in reduce, store the incoming segment
+    void *buff_to_free_item;
+    mca_coll_adapt_cuda_reduce_cuda_callback_fn_t cuda_callback; 
 };
-
-typedef struct mca_coll_adapt_cuda_reduce_context_s mca_coll_adapt_cuda_reduce_context_t;
 
 OBJ_CLASS_DECLARATION(mca_coll_adapt_cuda_reduce_context_t);
 

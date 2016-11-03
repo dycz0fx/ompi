@@ -2203,7 +2203,7 @@ int mca_common_cuda_memcpy_async(void *dest, const void *src, size_t size)
     }
 }
 
-int mca_common_cuda_sync_memcpy_stream()
+int mca_common_cuda_sync_memcpy_stream(void)
 {
     int result;
     result = cuFunc.cuStreamSynchronize(memcpyStream);

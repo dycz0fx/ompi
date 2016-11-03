@@ -68,6 +68,7 @@ OPAL_DECLSPEC void *mca_common_cuda_get_htod_stream(void);
 OPAL_DECLSPEC void *mca_common_cuda_get_nccl_stream(void);
 OPAL_DECLSPEC void mca_common_cuda_sync_nccl_stream(void);
 OPAL_DECLSPEC void *mca_common_cuda_get_memcpy_stream(void);
+OPAL_DECLSPEC int mca_common_cuda_sync_memcpy_stream(void);
 
 OPAL_DECLSPEC int progress_one_cuda_ipc_event(struct mca_btl_base_descriptor_t **);
 OPAL_DECLSPEC int progress_one_cuda_dtoh_event(struct mca_btl_base_descriptor_t **);
@@ -92,7 +93,6 @@ OPAL_DECLSPEC int mca_common_cuda_stage_one_init(void);
 OPAL_DECLSPEC int mca_common_cuda_get_address_range(void *pbase, size_t *psize, void *base);
 OPAL_DECLSPEC void mca_common_cuda_fini(void);
 OPAL_DECLSPEC int mca_common_cuda_memcpy_async(void *dest, const void *src, size_t size);
-OPAL_DECLSPEC int mca_common_cuda_sync_memcpy_stream();
 OPAL_DECLSPEC int mca_common_cuda_is_stage_three_init();
 #if OPAL_CUDA_GDR_SUPPORT
 OPAL_DECLSPEC bool mca_common_cuda_previously_freed_memory(mca_rcache_base_registration_t *reg);

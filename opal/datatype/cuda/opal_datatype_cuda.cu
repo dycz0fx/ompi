@@ -6,7 +6,8 @@
 #include <stdio.h>
 #include <assert.h>
 #include <stdarg.h> 
-
+#include <sys/types.h>
+#include <unistd.h>
 
 ddt_cuda_list_t *cuda_free_list;
 ddt_cuda_device_t *cuda_devices;
@@ -512,7 +513,8 @@ void* opal_ddt_cuda_malloc_gpu_buffer(size_t size, int gpu_id)
     cudaGetDevice(&dev_id);
     ddt_cuda_device_t *device = &cuda_devices[gpu_id];
     if (device->buffer_free_size < size) {
-        DT_CUDA_DEBUG( opal_cuda_output( 0, "No GPU buffer at dev_id %d.\n", dev_id); );
+        DT_CUDA_DEBUG( opal_cuda_output( 0, "No GPU buffer at dev_id %d, pid %d.\n", dev_id, getpid()); );
+        assert(0);
         return NULL;
     }
     ddt_cuda_buffer_t *ptr = device->buffer_free.head;
