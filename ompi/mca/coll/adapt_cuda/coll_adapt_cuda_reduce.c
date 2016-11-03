@@ -27,8 +27,8 @@
 #define TEST printfno
 
 
-int coll_adapt_cuda_reduce_use_sync = 1;
-int coll_adapt_cuda_use_cpu_buff = 1;
+int coll_adapt_cuda_reduce_use_sync = 0;
+int coll_adapt_cuda_use_cpu_buff = 0;
 
 //Can only work on commutative op
 
@@ -44,6 +44,8 @@ static void printfno(){
 static int reduce_send_context_async_op_callback(mca_coll_adapt_cuda_reduce_context_t *send_context);
 
 static int reduce_async_op_free_inbuf(mca_coll_adapt_cuda_item_t * item, int rank);
+
+static int reduce_async_op_free_cpu_buf(mca_coll_adapt_cuda_item_t * item, mca_coll_adapt_cuda_constant_reduce_context_t *con);
 
 static int print_topo_level(int rank, ompi_coll_tree_t* tree)
 {
@@ -73,7 +75,7 @@ static mca_coll_adapt_cuda_item_t * get_next_ready_item(opal_list_t* list, int n
     return NULL;
 }
 
-static int add_to_list(opal_list_t* list, int id, void *buff_to_free, mca_coll_adapt_cuda_item_t **op_item){
+static int add_to_list(opal_list_t* list, int id, void *buff_to_free, int buff_to_free_cpu_index, mca_coll_adapt_cuda_item_t **op_item){
     mca_coll_adapt_cuda_item_t *item;
     int ret = 0;
     for(item = (mca_coll_adapt_cuda_item_t *) opal_list_get_first(list);
@@ -82,6 +84,7 @@ static int add_to_list(opal_list_t* list, int id, void *buff_to_free, mca_coll_a
         if (item->id == id) {
             (item->count)++;
             item->buff_to_free[item->count-1] = buff_to_free;
+            item->buff_to_free_cpu_index[item->count-1] = buff_to_free_cpu_index;
             *op_item = item;
             ret = 1;
             break;
@@ -92,6 +95,7 @@ static int add_to_list(opal_list_t* list, int id, void *buff_to_free, mca_coll_a
         item->id = id;
         item->count = 1;
         item->buff_to_free[item->count-1] = buff_to_free;
+        item->buff_to_free_cpu_index[item->count-1] = buff_to_free_cpu_index;
         item->op_event = NULL;
         *op_item = item;
         opal_list_append(list, (opal_list_item_t *)item);
@@ -1125,9 +1129,18 @@ static int send_cb(ompi_request_t *req){
             //    opal_output(0, "event %p is done, not record it\n", item->op_event);
                 mca_common_cuda_return_op_event_item(item->op_event);
                 reduce_async_op_free_inbuf(item, context->con->rank);
+                
+                temp_send_buf = send_context->buff;
+                /* node and socket leader , send from cpu */
+                if (coll_adapt_cuda_use_cpu_buff && (send_context->con->tree->topo_flags == 1 || send_context->con->tree->topo_flags == 0)) {
+                    temp_send_buf = send_context->con->cpu_buff_list[send_context->frag_id * send_context->con->tree->tree_nextsize + 0];
+                    assert(temp_send_buf != NULL);
+                }
+                
                 ompi_request_t *send_req;
                 err = MCA_PML_CALL(isend(send_context->buff, send_count, send_context->con->datatype, send_context->peer, send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
-        
+                
+                reduce_async_op_free_cpu_buf(item, context->con);
                 //release the item
                 OBJ_RELEASE(item);
         
@@ -1227,6 +1240,7 @@ static int recv_cb(ompi_request_t *req){
     
     void *op_cuda_stream = NULL;
     void *buff_to_free = NULL;
+    int buff_to_free_cpu_index = -1;
     int op_asyn_not_free = 0;
     mca_mpool_base_module_t *mpool = mca_coll_adapt_cuda_component.pined_cpu_mpool;
     //atomic
@@ -1274,10 +1288,19 @@ static int recv_cb(ompi_request_t *req){
     /* node leader, copy data into GPU to do op */
     
     if (coll_adapt_cuda_use_cpu_buff && context->con->tree->topo_flags == 0 && context->con->tree->tree_next_topo_flags[context->child_id] != 2) {
-        ompi_datatype_copy_content_same_ddt(context->con->datatype, context->count, (char*)context->buff, context->con->cpu_buff_list[context->frag_id * context->con->tree->tree_nextsize + context->child_id]);
-        if (context->child_id != 0) {
-            mpool->mpool_free(mpool, context->con->cpu_buff_list[context->frag_id * context->con->tree->tree_nextsize + context->child_id]);
-            context->con->cpu_buff_list[context->frag_id * context->con->tree->tree_nextsize + context->child_id] = NULL;
+        if (0 == coll_adapt_cuda_reduce_use_sync && context->con->rank != context->con->root) {
+            context->con->datatype->super.flags |= OPAL_DATATYPE_FLAG_GPU_ASYNC;
+            ompi_datatype_copy_content_same_ddt(context->con->datatype, context->count, (char*)context->buff, context->con->cpu_buff_list[context->frag_id * context->con->tree->tree_nextsize + context->child_id]);
+            context->con->datatype->super.flags &= ~OPAL_DATATYPE_FLAG_GPU_ASYNC;
+            if (context->child_id != 0) {
+                buff_to_free_cpu_index = context->frag_id * context->con->tree->tree_nextsize + context->child_id;
+            }
+        } else {
+            ompi_datatype_copy_content_same_ddt(context->con->datatype, context->count, (char*)context->buff, context->con->cpu_buff_list[context->frag_id * context->con->tree->tree_nextsize + context->child_id]);
+            if (context->child_id != 0) {
+                mpool->mpool_free(mpool, context->con->cpu_buff_list[context->frag_id * context->con->tree->tree_nextsize + context->child_id]);
+                context->con->cpu_buff_list[context->frag_id * context->con->tree->tree_nextsize + context->child_id] = NULL;
+            }
         }
     }
     
@@ -1347,7 +1370,7 @@ static int recv_cb(ompi_request_t *req){
     //set recv list
     opal_mutex_lock (context->con->mutex_recv_list);
     mca_coll_adapt_cuda_item_t *op_item = NULL;
-    add_to_list(context->con->recv_list, context->frag_id, buff_to_free, &op_item);
+    add_to_list(context->con->recv_list, context->frag_id, buff_to_free, buff_to_free_cpu_index, &op_item);
     
     /* node and socket leader , copy data back to cpu and send after all op is done */
     if (op_item->count == context->con->tree->tree_nextsize && coll_adapt_cuda_use_cpu_buff && (context->con->tree->topo_flags == 1 || context->con->tree->topo_flags == 0)) {
@@ -1360,7 +1383,7 @@ static int recv_cb(ompi_request_t *req){
         if (op_item->id == (context->con->num_segs - 1)) {
             copy_count = context->con->count - op_item->id * context->con->seg_count;
         }
-        if (0 == coll_adapt_cuda_reduce_use_sync) {
+        if (0 == coll_adapt_cuda_reduce_use_sync && context->con->rank != context->con->root) {
             context->con->datatype->super.flags |= OPAL_DATATYPE_FLAG_GPU_ASYNC;
             ompi_datatype_copy_content_same_ddt(context->con->datatype, copy_count, context->con->cpu_buff_list[op_item->id * context->con->tree->tree_nextsize + 0], (char*)context->con->accumbuf[context->frag_id]);
             context->con->datatype->super.flags &= ~OPAL_DATATYPE_FLAG_GPU_ASYNC;
@@ -1412,9 +1435,18 @@ static int recv_cb(ompi_request_t *req){
             //        opal_output(0, "event %p is done, not record it\n", item->op_event);
                     mca_common_cuda_return_op_event_item(item->op_event);
                     reduce_async_op_free_inbuf(item, context->con->rank);
+                    
+                    temp_send_buf = send_context->buff;
+                    /* node and socket leader , send from cpu */
+                    if (coll_adapt_cuda_use_cpu_buff && (send_context->con->tree->topo_flags == 1 || send_context->con->tree->topo_flags == 0)) {
+                        temp_send_buf = send_context->con->cpu_buff_list[send_context->frag_id * send_context->con->tree->tree_nextsize + 0];
+                        assert(temp_send_buf != NULL);
+                    }
+                    
                     ompi_request_t *send_req;
                     err = MCA_PML_CALL(isend(send_context->buff, send_count, send_context->con->datatype, send_context->peer, send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
             
+                    reduce_async_op_free_cpu_buf(item, context->con);
                     //release the item
                     OBJ_RELEASE(item);
             
@@ -1805,11 +1837,28 @@ static int reduce_async_op_free_inbuf(mca_coll_adapt_cuda_item_t * item, int ran
             item->buff_to_free[i] = NULL;
         }
     }
+    return 1;
+}
+
+static int reduce_async_op_free_cpu_buf(mca_coll_adapt_cuda_item_t * item, mca_coll_adapt_cuda_constant_reduce_context_t *con)
+{
+    if (0 == coll_adapt_cuda_use_cpu_buff) return 0;
+    int i;
+    mca_mpool_base_module_t *mpool = mca_coll_adapt_cuda_component.pined_cpu_mpool;
+    for (i = 0; i < item->count; i++) {
+        if (item->buff_to_free_cpu_index[i] == -1) continue;
+        if (con->cpu_buff_list[item->buff_to_free_cpu_index[i]] != NULL) {
+            mpool->mpool_free(mpool, con->cpu_buff_list[item->buff_to_free_cpu_index[i]]);
+            con->cpu_buff_list[item->buff_to_free_cpu_index[i]] = NULL;
+        }
+    }
+    return 1;
 }
 
 static int reduce_send_context_async_op_callback(mca_coll_adapt_cuda_reduce_context_t *send_context)
 {
     if (coll_adapt_cuda_reduce_use_sync) assert(0);
+    //opal_output(0, "progress reduce cb\n");
     ompi_request_t *send_req;
     mca_coll_adapt_cuda_item_t *item = send_context->buff_to_free_item; 
     reduce_async_op_free_inbuf(item, send_context->con->rank);
@@ -1822,8 +1871,16 @@ static int reduce_send_context_async_op_callback(mca_coll_adapt_cuda_reduce_cont
         send_count = send_context->con->count - item->id * send_context->con->seg_count;
     }
     
+    void *temp_send_buf = send_context->buff;
+    /* node and socket leader , send from cpu */
+    if (coll_adapt_cuda_use_cpu_buff && (send_context->con->tree->topo_flags == 1 || send_context->con->tree->topo_flags == 0)) {
+        temp_send_buf = send_context->con->cpu_buff_list[send_context->frag_id * send_context->con->tree->tree_nextsize + 0];
+        assert(temp_send_buf != NULL);
+    }
+    
     int err = MCA_PML_CALL(isend(send_context->buff, send_count, send_context->con->datatype, send_context->peer, send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
     
+    reduce_async_op_free_cpu_buf(item, send_context->con);
     //release the item
     OBJ_RELEASE(item);
     ompi_request_set_callback(send_req, send_cb, send_context);
