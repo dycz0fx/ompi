@@ -197,6 +197,8 @@ static void *coll_adapt_cuda_mpool_alloc (mca_mpool_base_module_t *mpool,
     //    opal_output( 0, "Malloc buffer from mpool %p, size %lu\n", addr, size);
         return addr;
     }
+    opal_output( 0, "no buffer for size %ld.\n", size);
+    assert(0);
     return NULL;
 }
 

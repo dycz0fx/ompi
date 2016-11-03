@@ -133,6 +133,7 @@ struct mca_coll_adapt_cuda_constant_reduce_context_s {
     int distance;   //address of inbuf->buff to address of inbuf
     size_t real_seg_size;
     char **cpu_buff_list;
+    char ** accumbuf_cpu;   //accumulate buff for cpu use, used in reduce
 };
 
 typedef struct mca_coll_adapt_cuda_constant_reduce_context_s mca_coll_adapt_cuda_constant_reduce_context_t;
@@ -152,6 +153,7 @@ struct mca_coll_adapt_cuda_reduce_context_s {
     int frag_id;
     int child_id;
     int peer;
+    size_t count;
     mca_coll_adapt_cuda_constant_reduce_context_t * con;
     char *inbuf;  //only used in reduce, store the incoming segment
     void *buff_to_free_item;
