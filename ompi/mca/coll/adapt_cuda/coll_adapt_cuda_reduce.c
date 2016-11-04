@@ -27,7 +27,7 @@
 #define TEST printfno
 
 
-int coll_adapt_cuda_reduce_use_sync = 1;
+int coll_adapt_cuda_reduce_use_sync = 0;
 int coll_adapt_cuda_use_cpu_buff = 1;
 
 //Can only work on commutative op
@@ -1156,6 +1156,8 @@ static int send_cb(ompi_request_t *req){
                     send_context->con->cpu_buff_list[send_context->frag_id * send_context->con->tree->tree_nextsize + 0] = mpool->mpool_alloc(mpool, sizeof(char)* send_context->con->real_seg_size, 0, 0);
                     temp_send_buf = send_context->con->cpu_buff_list[send_context->frag_id * send_context->con->tree->tree_nextsize + 0];
                     ompi_datatype_copy_content_same_ddt(send_context->con->datatype, send_count, temp_send_buf, (char*)context->buff);
+                } else {
+                    temp_send_buf = send_context->con->cpu_buff_list[send_context->frag_id * send_context->con->tree->tree_nextsize + 0];
                 }
                 assert(temp_send_buf != NULL);
             }
