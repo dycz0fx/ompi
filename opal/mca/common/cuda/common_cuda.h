@@ -79,6 +79,7 @@ OPAL_DECLSPEC int progress_one_cuda_htod_event(struct mca_btl_base_descriptor_t 
 OPAL_DECLSPEC int progress_one_cuda_memcpy_event(void **callback_frag);
 OPAL_DECLSPEC int progress_one_cuda_op_event(void **callback_frag);
 OPAL_DECLSPEC int mca_common_cuda_query_op_event_item(void *op_event_item);
+OPAL_DECLSPEC int mca_common_cuda_sync_op_event_item(void *op_event_item);
 
 OPAL_DECLSPEC void* mca_common_cuda_get_op_event_item(void);
 OPAL_DECLSPEC void mca_common_cuda_return_op_event_item(void *op_event_item);

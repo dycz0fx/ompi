@@ -133,6 +133,7 @@ struct mca_coll_adapt_cuda_constant_reduce_context_s {
     int distance;   //address of inbuf->buff to address of inbuf
     size_t real_seg_size;
     char **cpu_buff_list;
+    void **cpu_buff_memcpy_event;
     char ** accumbuf_cpu;   //accumulate buff for cpu use, used in reduce
 };
 

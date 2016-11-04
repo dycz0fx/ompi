@@ -1795,6 +1795,18 @@ int mca_common_cuda_query_op_event_item(void *op_event_item)
     return 1;
 }
 
+int mca_common_cuda_sync_op_event_item(void *op_event_item)
+{
+    common_cuda_op_event_t *op_event = (common_cuda_op_event_t *)op_event_item;
+    CUresult result = cuFunc.cuEventSynchronize(op_event->cuda_event);
+    if (CUDA_SUCCESS != result) {
+        opal_show_help("help-mpi-common-cuda.txt", "cuEventQuery failed",
+                       true, result);
+        return -1;
+    }
+    return 1;
+}
+
 /*
  * Function is called every time progress is called with the sm BTL.  If there
  * are outstanding events, check to see if one has completed.  If so, hand
