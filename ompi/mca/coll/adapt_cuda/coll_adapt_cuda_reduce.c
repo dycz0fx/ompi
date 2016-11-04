@@ -1109,7 +1109,6 @@ static int send_cb(ompi_request_t *req){
         send_context->con = context->con;
         OBJ_RETAIN(context->con);
         
-        opal_atomic_add_32(&(context->con->ongoing_send), 1);
         
         int send_count = send_context->con->seg_count;
         if (item->id == (send_context->con->num_segs - 1)) {
@@ -1126,6 +1125,7 @@ static int send_cb(ompi_request_t *req){
                 send_context->buff_to_free_item = item;
                 mca_common_cuda_save_op_event("op in coll_adapt_cuda_reduce", item->op_event, (void *)send_context);
             } else {
+                opal_atomic_add_32(&(context->con->ongoing_send), 1);
             //    opal_output(0, "event %p is done, not record it\n", item->op_event);
                 mca_common_cuda_return_op_event_item(item->op_event);
                 reduce_async_op_free_inbuf(item, context->con->rank);
@@ -1148,6 +1148,7 @@ static int send_cb(ompi_request_t *req){
                 ompi_request_set_callback(send_req, send_cb, send_context);
             }
         } else {
+            opal_atomic_add_32(&(context->con->ongoing_send), 1);
             temp_send_buf = send_context->buff;
             /* node and socket leader , send from cpu */
             if (coll_adapt_cuda_use_cpu_buff && (send_context->con->tree->topo_flags == 1 || send_context->con->tree->topo_flags == 0)) {
@@ -1424,7 +1425,7 @@ static int recv_cb(ompi_request_t *req){
             send_context->con = context->con;
             OBJ_RETAIN(context->con);
             //atomic
-            opal_atomic_add_32(&(context->con->ongoing_send), 1);
+           // opal_atomic_add_32(&(context->con->ongoing_send), 1);
             
             int send_count = send_context->con->seg_count;
             if (item->id == (send_context->con->num_segs - 1)) {
@@ -1440,6 +1441,7 @@ static int recv_cb(ompi_request_t *req){
                     send_context->buff_to_free_item = item;
                     mca_common_cuda_save_op_event("op in coll_adapt_cuda_reduce", item->op_event, (void *)send_context);
                 } else {
+                    opal_atomic_add_32(&(context->con->ongoing_send), 1);
             //        opal_output(0, "event %p is done, not record it\n", item->op_event);
                     mca_common_cuda_return_op_event_item(item->op_event);
                     reduce_async_op_free_inbuf(item, context->con->rank);
@@ -1462,6 +1464,7 @@ static int recv_cb(ompi_request_t *req){
                     ompi_request_set_callback(send_req, send_cb, send_context);
                 }
             } else {
+                opal_atomic_add_32(&(context->con->ongoing_send), 1);
                 temp_send_buf = send_context->buff;
                 /* node and socket leader , send from cpu */
                 if (coll_adapt_cuda_use_cpu_buff && (send_context->con->tree->topo_flags == 1 || send_context->con->tree->topo_flags == 0)) {
@@ -1870,6 +1873,8 @@ static int reduce_send_context_async_op_callback(mca_coll_adapt_cuda_reduce_cont
     ompi_request_t *send_req;
     mca_coll_adapt_cuda_item_t *item = send_context->buff_to_free_item; 
     reduce_async_op_free_inbuf(item, send_context->con->rank);
+    
+    opal_atomic_add_32(&(send_context->con->ongoing_send), 1);
     
     assert(item->op_event != NULL);
     mca_common_cuda_return_op_event_item(item->op_event);
