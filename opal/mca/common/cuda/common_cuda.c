@@ -125,12 +125,14 @@ static CUstream *ipcStreams = NULL;
 static CUstream dtohStream = NULL;
 static CUstream htodStream = NULL;
 static CUstream memcpyStream = NULL;
+static CUstream *opStreams = NULL;
 static CUstream ncclStream = NULL;
 static int mca_common_cuda_gpu_mem_check_workaround = (CUDA_VERSION > 7000) ? 0 : 1;
 static opal_mutex_t common_cuda_init_lock;
 static opal_mutex_t common_cuda_htod_lock;
 static opal_mutex_t common_cuda_dtoh_lock;
 static opal_mutex_t common_cuda_ipc_lock;
+
 
 /* Functions called by opal layer - plugged into opal function table */
 static int mca_common_cuda_is_gpu_buffer(const void*, opal_convertor_t*);
@@ -159,6 +161,7 @@ OBJ_CLASS_INSTANCE(common_cuda_mem_regs_t,
 static int mca_common_cuda_async = 1;
 static int mca_common_cuda_cumemcpy_async;
 static int mca_common_cuda_d2d_nstreams;
+int mca_common_cuda_op_nstreams = 4;
 #if OPAL_ENABLE_DEBUG
 static int mca_common_cuda_cumemcpy_timing;
 #endif /* OPAL_ENABLE_DEBUG */
@@ -877,6 +880,19 @@ static int mca_common_cuda_stage_three_init(void)
         rc = OPAL_ERROR;
         goto cleanup_and_error;
     }
+    
+    opStreams = (CUstream*)malloc(sizeof(CUstream)*mca_common_cuda_op_nstreams);
+    for (int s=0; s<mca_common_cuda_op_nstreams; s++) {
+        opStreams[s] = NULL;
+        /* Create stream for use in ipc asynchronous copies */
+        res = cuFunc.cuStreamCreate(opStreams+s, 0);
+        if (OPAL_UNLIKELY(res != CUDA_SUCCESS)) {
+            opal_show_help("help-mpi-common-cuda.txt", "cuStreamCreate failed",
+                    true, OPAL_PROC_MY_HOSTNAME, res);
+            rc = OPAL_ERROR;
+            goto cleanup_and_error;
+        }
+    }
 
     if (mca_common_cuda_cumemcpy_async) {
         /* Create stream for use in cuMemcpyAsync synchronous copies */
@@ -1058,6 +1074,13 @@ void mca_common_cuda_fini(void)
         }
         if ((NULL != ncclStream) && ctx_ok) {
             cuFunc.cuStreamDestroy(ncclStream);
+        }
+        if (opStreams) {
+            for (int s=0; s<mca_common_cuda_op_nstreams; s++) {
+               if ((NULL != opStreams[s]) && ctx_ok) {
+                   cuFunc.cuStreamDestroy(opStreams[s]);
+               }
+            }
         }
         OBJ_DESTRUCT(&common_cuda_init_lock);
         OBJ_DESTRUCT(&common_cuda_htod_lock);
@@ -1694,7 +1717,7 @@ int mca_common_cuda_record_memcpy_event(char *msg, void *callback_frag)
 int mca_common_cuda_save_op_event(char *msg, void *op_event_item, void *callback_frag)
 {
     CUresult result;
-
+    
     /* First make sure there is room to store the event.  If not, then
      * return an error.  The error message will tell the user to try and
      * run again, but with a larger array for storing events. */
@@ -1726,12 +1749,13 @@ int mca_common_cuda_save_op_event(char *msg, void *op_event_item, void *callback
     return OPAL_SUCCESS;
 }
 
-int mca_common_cuda_record_op_event_item(void *op_event_item)
+int mca_common_cuda_record_op_event_item(void *op_event_item, void *cuda_stream)
 {
     CUresult result;
     common_cuda_op_event_t * op_event = (common_cuda_op_event_t *)op_event_item;
+    CUstream stream = (CUstream)cuda_stream;
 
-    result = cuFunc.cuEventRecord(op_event->cuda_event, memcpyStream);
+    result = cuFunc.cuEventRecord(op_event->cuda_event, stream);
     if (OPAL_UNLIKELY(CUDA_SUCCESS != result)) {
         opal_show_help("help-mpi-common-cuda.txt", "cuEventRecord failed",
                        true, OPAL_PROC_MY_HOSTNAME, result);
@@ -1765,6 +1789,10 @@ void mca_common_cuda_sync_nccl_stream(void) {
 
 void *mca_common_cuda_get_memcpy_stream(void) {
     return (void *)memcpyStream;
+}
+
+void *mca_common_cuda_get_op_stream(int i) {
+    return (void *)opStreams[i];
 }
 
 void* mca_common_cuda_get_op_event_item(void) {

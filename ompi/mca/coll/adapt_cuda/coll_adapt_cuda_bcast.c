@@ -534,7 +534,7 @@ int mca_coll_adapt_cuda_bcast(void *buff, int count, struct ompi_datatype_t *dat
         int size = ompi_comm_size(comm);
         int rank = ompi_comm_rank(comm);
        // coll_adapt_cuda_nccl_comm_init_rank(&nccl_comm, size, commId, rank);
-    //return mca_coll_adapt_cuda_bcast_pipeline(buff, count, datatype, root, comm, module);
+        //return mca_coll_adapt_cuda_bcast_pipeline(buff, count, datatype, root, comm, module);
         if (1 == opal_cuda_is_gpu_buffer(buff)) {
             return mca_coll_adapt_cuda_bcast_topoaware_chain(buff, count, datatype, root, comm, module);
         } else {

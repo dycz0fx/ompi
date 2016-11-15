@@ -17,7 +17,7 @@
 
 #define SEND_NUM 2    //send how many fragments at once
 #define RECV_NUM 3    //receive how many fragments at once
-#define SEG_SIZE 1024*1024   //size of a segment
+#define SEG_SIZE 1024*512   //size of a segment
 #define FREE_LIST_NUM_CONTEXT_LIST 10    //The start size of the context free list
 #define FREE_LIST_MAX_CONTEXT_LIST 10000  //The max size of the context free list
 #define FREE_LIST_INC_CONTEXT_LIST 10    //The incresment of the context free list
@@ -28,7 +28,7 @@
 
 
 int coll_adapt_cuda_reduce_use_sync = 0;
-int coll_adapt_cuda_use_cpu_buff = 1;
+int coll_adapt_cuda_use_cpu_buff = 0;
 
 //Can only work on commutative op
 
@@ -1334,7 +1334,11 @@ static int recv_cb(ompi_request_t *req){
         //op sbuf and accmbuf to accumbuf
        // ompi_op_reduce(context->con->op, context->con->sbuf + (ptrdiff_t)context->frag_id * (ptrdiff_t)context->con->segment_increment, context->con->accumbuf[context->frag_id], op_count, context->con->datatype);
         if (0 == coll_adapt_cuda_reduce_use_sync && context->con->rank != context->con->root) {
-            op_cuda_stream = mca_common_cuda_get_memcpy_stream();
+            if (coll_adapt_cuda_use_cpu_buff) {
+                op_cuda_stream = mca_common_cuda_get_memcpy_stream();
+            } else {
+                op_cuda_stream = mca_common_cuda_get_op_stream(context->frag_id % mca_common_cuda_op_nstreams);
+            }
             op_asyn_not_free = 1;
         }
         opal_cuda_recude_op_sum_double(context->con->sbuf + (ptrdiff_t)context->frag_id * (ptrdiff_t)context->con->segment_increment, context->con->accumbuf[context->frag_id], op_count, op_cuda_stream);
@@ -1346,7 +1350,11 @@ static int recv_cb(ompi_request_t *req){
             TEST("[%d]: op rbuf and accumbuf to rbuf\n", context->con->rank);
             //ompi_op_reduce(context->con->op, context->con->accumbuf[context->frag_id], context->buff, op_count, context->con->datatype);
             if (0 == coll_adapt_cuda_reduce_use_sync && context->con->rank != context->con->root) {
-                op_cuda_stream = mca_common_cuda_get_memcpy_stream();
+                if (coll_adapt_cuda_use_cpu_buff) {
+                    op_cuda_stream = mca_common_cuda_get_memcpy_stream();
+                } else {
+                    op_cuda_stream = mca_common_cuda_get_op_stream(context->frag_id % mca_common_cuda_op_nstreams);
+                }
                 op_asyn_not_free = 1;
             }
             opal_cuda_recude_op_sum_double(context->con->accumbuf[context->frag_id], context->buff, op_count, op_cuda_stream);
@@ -1365,7 +1373,11 @@ static int recv_cb(ompi_request_t *req){
             TEST("[%d]: op inbuf and accmbuf to accumbuf\n", context->con->rank);
             //ompi_op_reduce(context->con->op, context->inbuf->buff - context->con->lower_bound, context->con->accumbuf[context->frag_id], op_count, context->con->datatype);
             if (0 == coll_adapt_cuda_reduce_use_sync && context->con->rank != context->con->root) {
-                op_cuda_stream = mca_common_cuda_get_memcpy_stream();
+                if (coll_adapt_cuda_use_cpu_buff) {
+                    op_cuda_stream = mca_common_cuda_get_memcpy_stream();
+                } else {
+                    op_cuda_stream = mca_common_cuda_get_op_stream(context->frag_id % mca_common_cuda_op_nstreams);
+                }
                 buff_to_free = context->inbuf;
                 op_asyn_not_free = 1;
             }
@@ -1404,7 +1416,12 @@ static int recv_cb(ompi_request_t *req){
     // if use async and all children have been received and op, record event */ 
     if (op_item->count == context->con->tree->tree_nextsize && 0 == coll_adapt_cuda_reduce_use_sync && context->con->rank != context->con->root) {
         op_item->op_event = mca_common_cuda_get_op_event_item();
-        mca_common_cuda_record_op_event_item(op_item->op_event);
+        if (coll_adapt_cuda_use_cpu_buff) {
+            op_cuda_stream = mca_common_cuda_get_memcpy_stream();
+        } else {
+            op_cuda_stream = mca_common_cuda_get_op_stream(context->frag_id % mca_common_cuda_op_nstreams);
+        }
+        mca_common_cuda_record_op_event_item(op_item->op_event, op_cuda_stream);
     }
     opal_mutex_unlock (context->con->mutex_recv_list);
     

@@ -280,7 +280,7 @@ static int coll_adapt_cuda_progress()
         if (context != NULL) {
             int *flag = (int *)(context + sizeof(opal_free_list_item_t));
             if (*flag == COLL_ADAPT_CUDA_CONTEXT_FLAGS_BCAST) {
-                opal_output(0, "bcast call back\n");
+        //        opal_output(0, "bcast call back\n");
                 mca_coll_adapt_cuda_bcast_context_t *bcast_context = (mca_coll_adapt_cuda_bcast_context_t *)context;
                 assert(bcast_context->cuda_callback != NULL);
                 bcast_context->cuda_callback(bcast_context);
