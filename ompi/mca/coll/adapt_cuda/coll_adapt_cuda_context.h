@@ -308,11 +308,16 @@ struct mca_coll_adapt_cuda_constant_allreduce_context_s {
     ompi_op_t * op;  //reduce operation
     ptrdiff_t lower_bound;
     int extra_ranks;
-    opal_free_list_t *inbuf_list;
     int complete;
     int adjsize;
     int sendbuf_ready;
     int inbuf_ready;
+    int total_send;
+    int total_recv;
+    opal_mutex_t * mutex_buf;
+    opal_mutex_t * mutex_total_send;
+    opal_mutex_t * mutex_total_recv;
+    size_t real_seg_size;
 };
 
 typedef struct mca_coll_adapt_cuda_constant_allreduce_context_s mca_coll_adapt_cuda_constant_allreduce_context_t;
@@ -323,7 +328,7 @@ OBJ_CLASS_DECLARATION(mca_coll_adapt_cuda_constant_allreduce_context_t);
 //allreduce context
 struct mca_coll_adapt_cuda_allreduce_context_s {
     opal_free_list_item_t super;
-    mca_coll_adapt_cuda_inbuf_t *inbuf;  //store the incoming segment
+    char *inbuf;  //store the incoming segment
     int newrank;
     int distance;      //distance for recursive doubleing
     int peer;
@@ -333,6 +338,53 @@ struct mca_coll_adapt_cuda_allreduce_context_s {
 typedef struct mca_coll_adapt_cuda_allreduce_context_s mca_coll_adapt_cuda_allreduce_context_t;
 
 OBJ_CLASS_DECLARATION(mca_coll_adapt_cuda_allreduce_context_t);
+
+
+/* allreduce constant context in allreduce context */
+struct mca_coll_adapt_cuda_constant_allreduce_ring_context_s {
+    opal_object_t  super;
+    char *rbuf;
+    char *sbuf;
+    ompi_datatype_t * dtype;
+    ompi_communicator_t * comm;
+    int count;
+    opal_mutex_t * mutex_complete;
+    int complete;
+    int split_block;
+    opal_free_list_t * context_list;
+    int num_phases;
+    int early_blockcount;
+    int late_blockcount;
+    ptrdiff_t lower_bound;
+    ptrdiff_t extent;
+    ompi_op_t * op;  //reduce operation
+    ompi_request_t * request;
+    size_t real_seg_size;
+};
+
+typedef struct mca_coll_adapt_cuda_constant_allreduce_ring_context_s mca_coll_adapt_cuda_constant_allreduce_ring_context_t;
+
+OBJ_CLASS_DECLARATION(mca_coll_adapt_cuda_constant_allreduce_ring_context_t);
+
+
+//allreduce context
+struct mca_coll_adapt_cuda_allreduce_ring_context_s {
+    opal_free_list_item_t super;
+    char *buff;
+    int peer;
+    int block;
+    int phase;
+    ptrdiff_t phase_offset;
+    ptrdiff_t block_offset;
+    int phase_count;
+    char *inbuf;  //store the incoming segment
+    mca_coll_adapt_cuda_constant_allreduce_ring_context_t * con;
+};
+
+typedef struct mca_coll_adapt_cuda_allreduce_ring_context_s mca_coll_adapt_cuda_allreduce_ring_context_t;
+
+OBJ_CLASS_DECLARATION(mca_coll_adapt_cuda_allreduce_ring_context_t);
+
 
 /* alltoallv constant context in alltoallv context */
 struct mca_coll_adapt_cuda_constant_alltoallv_context_s {

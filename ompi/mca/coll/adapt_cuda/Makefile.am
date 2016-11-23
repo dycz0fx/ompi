@@ -17,6 +17,7 @@ sources = \
 	coll_adapt_cuda_nccl.c \
         coll_adapt_cuda_bcast.c \
         coll_adapt_cuda_reduce.c \
+        coll_adapt_cuda_allreduce.c \
         coll_adapt_cuda.h \
 	coll_adapt_cuda_algorithms.h \
 	coll_adapt_cuda_context.h \

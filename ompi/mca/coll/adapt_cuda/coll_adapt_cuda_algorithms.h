@@ -1,5 +1,6 @@
 #include "ompi/mca/coll/coll.h"
 #include "ompi/mca/coll/base/coll_base_topo.h"  //ompi_coll_tree_t
+#include "ompi/mca/coll/base/coll_base_functions.h" //COLL_BASE_COMPUTE_BLOCKCOUNT
 
 int mca_coll_adapt_cuda_bcast(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
 
@@ -121,7 +122,9 @@ int mca_coll_adapt_cuda_allreduce_intra_nonoverlapping(const void *sbuf, void *r
 
 int mca_coll_adapt_cuda_allreduce_intra_recursivedoubling(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
 
-int mca_coll_adapt_cuda_allreduce(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
+int mca_coll_adapt_cuda_allreduce_intra_ring_segmented(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, mca_coll_base_module_t *module, ompi_coll_tree_t* tree, uint32_t segsize);
+
+int mca_coll_adapt_cuda_allreduce(void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
 
 int mca_coll_adapt_cuda_iallreduce(void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module);
 
@@ -142,6 +145,13 @@ static inline uint64_t gettid(void) {
         min = sizeof(ptid);
     memcpy(&threadId, &ptid, min);
     return threadId;
+}
+
+static int log2_int(int n)
+{
+    int i=0;
+    while (n>>=1) ++i;
+    return i;
 }
 
 //print tree for test
