@@ -1302,7 +1302,7 @@ static int recv_cb(ompi_request_t *req){
                 recv_context->con->datatype->super.flags &= ~OPAL_DATATYPE_FLAG_GPU_ASYNC;
                 assert (recv_context->con->cpu_buff_memcpy_event[recv_context->frag_id] == NULL);
                 recv_context->con->cpu_buff_memcpy_event[recv_context->frag_id] = mca_common_cuda_get_op_event_item();
-                mca_common_cuda_record_op_event_item(recv_context->con->cpu_buff_memcpy_event[recv_context->frag_id]);
+                mca_common_cuda_record_op_event_item(recv_context->con->cpu_buff_memcpy_event[recv_context->frag_id], mca_common_cuda_get_memcpy_stream());
             }
             if (recv_context->con->tree->tree_next_topo_flags[recv_context->child_id] != 2) {
                 recv_context->con->cpu_buff_list[recv_context->frag_id * recv_context->con->tree->tree_nextsize + recv_context->child_id] = mpool->mpool_alloc(mpool, sizeof(char)* recv_context->con->real_seg_size, 0, 0);
@@ -1356,7 +1356,7 @@ static int recv_cb(ompi_request_t *req){
         ompi_op_reduce(context->con->op, context->con->cpu_buff_list[context->frag_id * context->con->tree->tree_nextsize + context->child_id], context->con->accumbuf_cpu[context->frag_id], op_count, context->con->datatype);
         GET_TIME( tend );
         total_time = ELAPSED_TIME( tstart, tend );
-        opal_output(0, "cpu op %ld us", total_time);       
+        opal_output(0, "cpu op %ld us, count %d\n", total_time, op_count);       
         mca_coll_adapt_cuda_item_t *op_item = NULL;
         add_to_list(context->con->recv_list, context->frag_id, buff_to_free, buff_to_free_cpu_index, &op_item);
         
@@ -1385,7 +1385,7 @@ static int recv_cb(ompi_request_t *req){
             opal_cuda_recude_op_sum_double(context->con->sbuf + (ptrdiff_t)context->frag_id * (ptrdiff_t)context->con->segment_increment, context->con->accumbuf[context->frag_id], op_count, op_cuda_stream);
             GET_TIME( tend );
             total_time = ELAPSED_TIME( tstart, tend );
-            opal_output(0, "gpu op %ld us", total_time);  
+            opal_output(0, "gpu op %ld us, count %d\n", total_time, op_count);  
         }
         else {
             if (context->inbuf == NULL) {
@@ -1430,7 +1430,7 @@ static int recv_cb(ompi_request_t *req){
         // if use async and all children have been received and op, record event */ 
         if (op_item->count == context->con->tree->tree_nextsize && 0 == coll_adapt_cuda_reduce_use_sync && context->con->rank != context->con->root) {
             op_item->op_event = mca_common_cuda_get_op_event_item();
-            mca_common_cuda_record_op_event_item(op_item->op_event);
+            mca_common_cuda_record_op_event_item(op_item->op_event, mca_common_cuda_get_memcpy_stream());
         }
         opal_mutex_unlock (context->con->mutex_recv_list);
     
@@ -1630,7 +1630,7 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
     ompi_datatype_get_true_extent(dtype, &true_lower_bound, &true_extent);
     real_seg_size = true_extent + (ptrdiff_t)(seg_count - 1) * extent;
     
-    if (rank == root) printf("reduce cuda generic\n");
+    if (rank == root) printf("reduce cuda generic cpu op\n");
     print_topo_level(rank, tree);
     
     //set up free list
@@ -1794,7 +1794,7 @@ int mca_coll_adapt_cuda_reduce_generic(const void *sbuf, void *rbuf, int count, 
                             ompi_datatype_copy_content_same_ddt(dtype, recv_count, con->accumbuf_cpu[context->frag_id], (char *)sbuf + (ptrdiff_t)j * (ptrdiff_t)segment_increment);
                             context->con->datatype->super.flags &= ~OPAL_DATATYPE_FLAG_GPU_ASYNC;
                             con->cpu_buff_memcpy_event[context->frag_id] = mca_common_cuda_get_op_event_item();
-                            mca_common_cuda_record_op_event_item(con->cpu_buff_memcpy_event[context->frag_id]);
+                            mca_common_cuda_record_op_event_item(con->cpu_buff_memcpy_event[context->frag_id], mca_common_cuda_get_memcpy_stream());
                         }
                         if (tree->tree_next_topo_flags[i] != 2) {
                             con->cpu_buff_list[context->frag_id * tree->tree_nextsize + context->child_id] = mpool->mpool_alloc(mpool, sizeof(char)* real_seg_size, 0, 0);
