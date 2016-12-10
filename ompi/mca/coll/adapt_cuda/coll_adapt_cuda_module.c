@@ -173,7 +173,7 @@ mca_coll_adapt_cuda_comm_query(struct ompi_communicator_t *comm, int *priority)
     adapt_module->super.ft_event        = NULL;
     adapt_module->super.coll_allgather  = NULL;
     adapt_module->super.coll_allgatherv = NULL;
-    adapt_module->super.coll_allreduce  = mca_coll_adapt_cuda_allreduce;
+    adapt_module->super.coll_allreduce  = NULL;//mca_coll_adapt_cuda_allreduce;
     adapt_module->super.coll_alltoall   = NULL;
     //adapt_module->super.coll_alltoallv  = mca_coll_adapt_alltoallv;
     adapt_module->super.coll_alltoallw  = NULL;
