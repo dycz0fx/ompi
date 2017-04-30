@@ -49,12 +49,12 @@ static int reduce_async_op_free_cpu_buf(mca_coll_adapt_cuda_item_t * item, mca_c
 
 static int print_topo_level(int rank, ompi_coll_tree_t* tree)
 {
-    printf("rank %d, pid %d, topo_level %d, parent [%d topo %d], nb child %d, ", rank, getpid(), tree->topo_flags, tree->tree_prev, tree->tree_prev_topo_flags, tree->tree_nextsize);
+/*    printf("rank %d, pid %d, topo_level %d, parent [%d topo %d], nb child %d, ", rank, getpid(), tree->topo_flags, tree->tree_prev, tree->tree_prev_topo_flags, tree->tree_nextsize);
     int i;
     for (i=0; i<tree->tree_nextsize; i++) {
         printf("child [%d, topo %d], ", tree->tree_next[i], tree->tree_next_topo_flags[i]);
     }
-    printf("\n");
+    printf("\n");*/
     return 0;
 }
 
