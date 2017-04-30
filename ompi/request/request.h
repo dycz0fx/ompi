@@ -113,6 +113,7 @@ struct ompi_request_t {
     ompi_request_cancel_fn_t req_cancel;        /**< Optional function to cancel the request */
     ompi_request_complete_fn_t req_complete_cb; /**< Called when the request is MPI completed */
     void *req_complete_cb_data;
+    bool req_complete_cb_called;                //need to be set to 1 when the
     ompi_mpi_object_t req_mpi_object;           /**< Pointer to MPI object that created this request */
 };
 
@@ -147,6 +148,7 @@ typedef struct ompi_predefined_request_t ompi_predefined_request_t;
         (request)->req_complete = REQUEST_PENDING;    \
         (request)->req_state = OMPI_REQUEST_INACTIVE; \
         (request)->req_persistent = (persistent);     \
+        (request)->req_complete_cb_called = 0;        \
         (request)->req_complete_cb  = NULL;           \
         (request)->req_complete_cb_data = NULL;       \
     } while (0);
@@ -415,12 +417,12 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
 static inline int ompi_request_complete(ompi_request_t* request, bool with_signal)
 {
     int rc = 0;
-
-    if( NULL != request->req_complete_cb) {
+    
+    if( NULL != request->req_complete_cb && request->req_complete_cb_called == 0) {
         rc = request->req_complete_cb( request );
         request->req_complete_cb = NULL;
     }
-
+    
     if (0 == rc) {
         if( OPAL_LIKELY(with_signal) ) {
             if(!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED)) {
@@ -432,13 +434,23 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
             }
         } else
             request->req_complete = REQUEST_COMPLETED;
-
+        
         if( OPAL_UNLIKELY(MPI_SUCCESS != request->req_status.MPI_ERROR) ) {
             ompi_request_failed++;
         }
     }
 
     return OMPI_SUCCESS;
+}
+
+static inline int ompi_request_set_callback(ompi_request_t* request,
+                                            ompi_request_complete_fn_t cb,
+                                            void* cb_data)
+{
+    request->req_complete_cb_data = cb_data;
+    request->req_complete_cb = cb;
+    //request is completed and the callback is not called, need to call myself
+    return !((request->req_complete_cb_called == 0) && (request->req_complete));
 }
 
 END_C_DECLS

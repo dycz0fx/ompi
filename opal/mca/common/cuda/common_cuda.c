@@ -121,15 +121,18 @@ bool mca_common_cuda_enabled = false;
 static bool mca_common_cuda_register_memory = true;
 static bool mca_common_cuda_warning = false;
 static opal_list_t common_cuda_memory_registrations;
-static CUstream ipcStream = NULL;
+static CUstream *ipcStreams = NULL;
 static CUstream dtohStream = NULL;
 static CUstream htodStream = NULL;
 static CUstream memcpyStream = NULL;
+static CUstream *opStreams = NULL;
+static CUstream ncclStream = NULL;
 static int mca_common_cuda_gpu_mem_check_workaround = (CUDA_VERSION > 7000) ? 0 : 1;
 static opal_mutex_t common_cuda_init_lock;
 static opal_mutex_t common_cuda_htod_lock;
 static opal_mutex_t common_cuda_dtoh_lock;
 static opal_mutex_t common_cuda_ipc_lock;
+
 
 /* Functions called by opal layer - plugged into opal function table */
 static int mca_common_cuda_is_gpu_buffer(const void*, opal_convertor_t*);
@@ -157,15 +160,32 @@ OBJ_CLASS_INSTANCE(common_cuda_mem_regs_t,
 
 static int mca_common_cuda_async = 1;
 static int mca_common_cuda_cumemcpy_async;
+static int mca_common_cuda_d2d_nstreams;
+int mca_common_cuda_op_nstreams = 4;
 #if OPAL_ENABLE_DEBUG
 static int mca_common_cuda_cumemcpy_timing;
 #endif /* OPAL_ENABLE_DEBUG */
+
+struct common_cuda_op_event_s {
+    opal_list_item_t super;
+    CUevent cuda_event;
+};
+typedef struct common_cuda_op_event_s common_cuda_op_event_t;
+OBJ_CLASS_DECLARATION(common_cuda_op_event_t);
+OBJ_CLASS_INSTANCE(common_cuda_op_event_t,
+                   opal_list_item_t,
+                   NULL,
+                   NULL);
 
 /* Array of CUDA events to be queried for IPC stream, sending side and
  * receiving side. */
 CUevent *cuda_event_ipc_array = NULL;
 CUevent *cuda_event_dtoh_array = NULL;
 CUevent *cuda_event_htod_array = NULL;
+CUevent *cuda_event_memcpy_array = NULL;
+
+static opal_list_t common_cuda_op_event_list;
+common_cuda_op_event_t **cuda_event_op_array = NULL;
 
 /* Array of fragments currently being moved by cuda async non-blocking
  * operations */
@@ -173,20 +193,28 @@ struct mca_btl_base_descriptor_t **cuda_event_ipc_frag_array = NULL;
 struct mca_btl_base_descriptor_t **cuda_event_dtoh_frag_array = NULL;
 struct mca_btl_base_descriptor_t **cuda_event_htod_frag_array = NULL;
 
+void **cuda_event_memcpy_callback_frag_array = NULL;
+void **cuda_event_op_callback_frag_array = NULL;
+
 /* First free/available location in cuda_event_status_array */
 static int cuda_event_ipc_first_avail, cuda_event_dtoh_first_avail, cuda_event_htod_first_avail;
+static int cuda_event_memcpy_first_avail, cuda_event_op_first_avail;
 
 /* First currently-being used location in the cuda_event_status_array */
 static int cuda_event_ipc_first_used, cuda_event_dtoh_first_used, cuda_event_htod_first_used;
+static int cuda_event_memcpy_first_used, cuda_event_op_first_used;
 
 /* Number of status items currently in use */
 static int cuda_event_ipc_num_used, cuda_event_dtoh_num_used, cuda_event_htod_num_used;
+static int cuda_event_memcpy_num_used, cuda_event_op_num_used;
 
 /* Size of array holding events */
 int cuda_event_max = 400;
 static int cuda_event_ipc_most = 0;
 static int cuda_event_dtoh_most = 0;
 static int cuda_event_htod_most = 0;
+static int cuda_event_memcpy_most = 0;
+static int cuda_event_op_most = 0;
 
 /* Handle to libcuda.so */
 opal_dl_handle_t *libcuda_handle = NULL;
@@ -284,6 +312,15 @@ void mca_common_cuda_register_mca_variables(void)
                                  OPAL_INFO_LVL_5,
                                  MCA_BASE_VAR_SCOPE_READONLY,
                                  &mca_common_cuda_cumemcpy_async);
+
+    /* Use this parameter to set the number of CUDA streams for IPC async memcpy */
+    mca_common_cuda_d2d_nstreams = 1;
+    (void) mca_base_var_register("ompi", "mpi", "common_cuda", "d2d_nstreams",
+                                 "Set number of CUDA async streams for device to device cuMemcpyAsync",
+                                 MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                 OPAL_INFO_LVL_5,
+                                 MCA_BASE_VAR_SCOPE_READONLY,
+                                 &mca_common_cuda_d2d_nstreams);
 
 #if OPAL_ENABLE_DEBUG
     /* Use this flag to dump out timing of cumempcy sync and async */
@@ -477,6 +514,7 @@ int mca_common_cuda_stage_one_init(void)
 #if OPAL_CUDA_GET_ATTRIBUTES
     OPAL_CUDA_DLSYM(libcuda_handle, cuPointerGetAttributes);
 #endif /* OPAL_CUDA_GET_ATTRIBUTES */
+    
     return 0;
 }
 
@@ -495,8 +533,13 @@ static int mca_common_cuda_stage_two_init(opal_common_cuda_function_table_t *fta
 
     ftable->gpu_is_gpu_buffer = &mca_common_cuda_is_gpu_buffer;
     ftable->gpu_cu_memcpy_async = &mca_common_cuda_cu_memcpy_async;
+    ftable->gpu_cu_memcpy_async_memcpystream = &mca_common_cuda_memcpy_async;
     ftable->gpu_cu_memcpy = &mca_common_cuda_cu_memcpy;
     ftable->gpu_memmove = &mca_common_cuda_memmove;
+
+    if (OPAL_SUCCESS != opal_cuda_kernel_support_init()) {
+        opal_cuda_kernel_support_fini();    
+    }
 
     opal_output_verbose(30, mca_common_cuda_output,
                         "CUDA: support functions initialized");
@@ -697,6 +740,83 @@ static int mca_common_cuda_stage_three_init(void)
            goto cleanup_and_error;
         }
     }
+    
+    if (true == mca_common_cuda_enabled) {
+        /* Set up an array to store outstanding async memcpy events.  Used on coll_adapt_cuda */
+        cuda_event_memcpy_num_used = 0;
+        cuda_event_memcpy_first_avail = 0;
+        cuda_event_memcpy_first_used = 0;
+
+        cuda_event_memcpy_array = (CUevent *) calloc(cuda_event_max, sizeof(CUevent *));
+        if (NULL == cuda_event_memcpy_array) {
+            opal_show_help("help-mpi-common-cuda.txt", "No memory",
+                           true, OPAL_PROC_MY_HOSTNAME);
+            rc = OPAL_ERROR;
+            goto cleanup_and_error;
+        }
+
+        /* Create the events since they can be reused. */
+        for (i = 0; i < cuda_event_max; i++) {
+            res = cuFunc.cuEventCreate(&cuda_event_memcpy_array[i], CU_EVENT_DISABLE_TIMING);
+            if (CUDA_SUCCESS != res) {
+                opal_show_help("help-mpi-common-cuda.txt", "cuEventCreate failed",
+                               true, OPAL_PROC_MY_HOSTNAME, res);
+                rc = OPAL_ERROR;
+                goto cleanup_and_error;
+            }
+        }
+
+        /* The first available status index is 0.  Make an empty frag
+           array. */
+        cuda_event_memcpy_callback_frag_array = (void **)
+            malloc(sizeof(void *) * cuda_event_max);
+        if (NULL == cuda_event_memcpy_callback_frag_array) {
+            opal_show_help("help-mpi-common-cuda.txt", "No memory",
+                           true, OPAL_PROC_MY_HOSTNAME);
+            rc = OPAL_ERROR;
+            goto cleanup_and_error;
+        }
+        
+        OBJ_CONSTRUCT(&common_cuda_op_event_list, opal_list_t);
+        /* Create the events since they can be reused. */
+        common_cuda_op_event_t * op_event = NULL;
+        for (i = 0; i < cuda_event_max; i++) {
+            op_event = OBJ_NEW(common_cuda_op_event_t);
+            assert(op_event != NULL);
+            res = cuFunc.cuEventCreate(&(op_event->cuda_event), CU_EVENT_DISABLE_TIMING);
+            if (CUDA_SUCCESS != res) {
+                opal_show_help("help-mpi-common-cuda.txt", "cuEventCreate failed",
+                               true, OPAL_PROC_MY_HOSTNAME, res);
+                rc = OPAL_ERROR;
+                goto cleanup_and_error;
+            }
+            opal_list_append(&common_cuda_op_event_list, (opal_list_item_t*)op_event);
+        }
+        
+        cuda_event_op_num_used = 0;
+        cuda_event_op_first_avail = 0;
+        cuda_event_op_first_used = 0;
+
+        cuda_event_op_array = (common_cuda_op_event_t **) calloc(cuda_event_max, sizeof(common_cuda_op_event_t *));
+        if (NULL == cuda_event_op_array) {
+            opal_show_help("help-mpi-common-cuda.txt", "No memory",
+                           true, OPAL_PROC_MY_HOSTNAME);
+            rc = OPAL_ERROR;
+            goto cleanup_and_error;
+        }
+
+        /* The first available status index is 0.  Make an empty frag
+           array. */
+        cuda_event_op_callback_frag_array = (void **)
+            malloc(sizeof(void *) * cuda_event_max);
+        if (NULL == cuda_event_op_callback_frag_array) {
+            opal_show_help("help-mpi-common-cuda.txt", "No memory",
+                           true, OPAL_PROC_MY_HOSTNAME);
+            rc = OPAL_ERROR;
+            goto cleanup_and_error;
+        }
+        
+    }
 
     s = opal_list_get_size(&common_cuda_memory_registrations);
     for(i = 0; i < s; i++) {
@@ -722,12 +842,17 @@ static int mca_common_cuda_stage_three_init(void)
     }
 
     /* Create stream for use in ipc asynchronous copies */
-    res = cuFunc.cuStreamCreate(&ipcStream, 0);
-    if (OPAL_UNLIKELY(res != CUDA_SUCCESS)) {
-        opal_show_help("help-mpi-common-cuda.txt", "cuStreamCreate failed",
-                       true, OPAL_PROC_MY_HOSTNAME, res);
-        rc = OPAL_ERROR;
-        goto cleanup_and_error;
+    ipcStreams = (CUstream*)malloc(sizeof(CUstream)*mca_common_cuda_d2d_nstreams);
+    for (int s=0; s<mca_common_cuda_d2d_nstreams; s++) {
+        ipcStreams[s] = NULL;
+        /* Create stream for use in ipc asynchronous copies */
+        res = cuFunc.cuStreamCreate(ipcStreams+s, 0);
+        if (OPAL_UNLIKELY(res != CUDA_SUCCESS)) {
+            opal_show_help("help-mpi-common-cuda.txt", "cuStreamCreate failed",
+                    true, OPAL_PROC_MY_HOSTNAME, res);
+            rc = OPAL_ERROR;
+            goto cleanup_and_error;
+        }
     }
 
     /* Create stream for use in dtoh asynchronous copies */
@@ -746,6 +871,27 @@ static int mca_common_cuda_stage_three_init(void)
                        true, OPAL_PROC_MY_HOSTNAME, res);
         rc = OPAL_ERROR;
         goto cleanup_and_error;
+    }
+    
+    res = cuFunc.cuStreamCreate(&ncclStream, 0);
+    if (OPAL_UNLIKELY(res != CUDA_SUCCESS)) {
+        opal_show_help("help-mpi-common-cuda.txt", "cuStreamCreate failed",
+                       true, OPAL_PROC_MY_HOSTNAME, res);
+        rc = OPAL_ERROR;
+        goto cleanup_and_error;
+    }
+    
+    opStreams = (CUstream*)malloc(sizeof(CUstream)*mca_common_cuda_op_nstreams);
+    for (int s=0; s<mca_common_cuda_op_nstreams; s++) {
+        opStreams[s] = NULL;
+        /* Create stream for use in ipc asynchronous copies */
+        res = cuFunc.cuStreamCreate(opStreams+s, 0);
+        if (OPAL_UNLIKELY(res != CUDA_SUCCESS)) {
+            opal_show_help("help-mpi-common-cuda.txt", "cuStreamCreate failed",
+                    true, OPAL_PROC_MY_HOSTNAME, res);
+            rc = OPAL_ERROR;
+            goto cleanup_and_error;
+        }
     }
 
     if (mca_common_cuda_cumemcpy_async) {
@@ -868,6 +1014,32 @@ void mca_common_cuda_fini(void)
             }
             free(cuda_event_dtoh_array);
         }
+        
+        if (NULL != cuda_event_memcpy_array) {
+            if (ctx_ok) {
+                for (i = 0; i < cuda_event_max; i++) {
+                    if (NULL != cuda_event_memcpy_array[i]) {
+                        cuFunc.cuEventDestroy(cuda_event_memcpy_array[i]);
+                    }
+                }
+            }
+            free(cuda_event_memcpy_array);
+        }
+        
+        if (NULL != cuda_event_op_array) {
+            if (ctx_ok) {
+                int s = opal_list_get_size(&common_cuda_op_event_list);
+                opal_output(0, "op_event_list size %d\n", s);
+                common_cuda_op_event_t * op_event;
+                for(i = 0; i < s; i++) {
+                    op_event = (common_cuda_op_event_t *)opal_list_remove_first(&common_cuda_op_event_list);
+                    cuFunc.cuEventDestroy(op_event->cuda_event);
+                    OBJ_RELEASE(op_event);
+                }
+                OBJ_DESTRUCT(&common_cuda_op_event_list);
+            }
+            free(cuda_event_op_array);
+        }
 
         if (NULL != cuda_event_ipc_frag_array) {
             free(cuda_event_ipc_frag_array);
@@ -878,8 +1050,18 @@ void mca_common_cuda_fini(void)
         if (NULL != cuda_event_dtoh_frag_array) {
             free(cuda_event_dtoh_frag_array);
         }
-        if ((NULL != ipcStream) && ctx_ok) {
-            cuFunc.cuStreamDestroy(ipcStream);
+        if (NULL != cuda_event_memcpy_callback_frag_array) {
+            free(cuda_event_memcpy_callback_frag_array);
+        }
+        if (NULL != cuda_event_op_callback_frag_array) {
+            free(cuda_event_op_callback_frag_array);
+        }
+        if (ipcStreams) {
+            for (int s=0; s<mca_common_cuda_d2d_nstreams; s++) {
+               if ((NULL != ipcStreams[s]) && ctx_ok) {
+                   cuFunc.cuStreamDestroy(ipcStreams[s]);
+               }
+            }
         }
         if ((NULL != dtohStream) && ctx_ok) {
             cuFunc.cuStreamDestroy(dtohStream);
@@ -889,6 +1071,16 @@ void mca_common_cuda_fini(void)
         }
         if ((NULL != memcpyStream) && ctx_ok) {
             cuFunc.cuStreamDestroy(memcpyStream);
+        }
+        if ((NULL != ncclStream) && ctx_ok) {
+            cuFunc.cuStreamDestroy(ncclStream);
+        }
+        if (opStreams) {
+            for (int s=0; s<mca_common_cuda_op_nstreams; s++) {
+               if ((NULL != opStreams[s]) && ctx_ok) {
+                   cuFunc.cuStreamDestroy(opStreams[s]);
+               }
+            }
         }
         OBJ_DESTRUCT(&common_cuda_init_lock);
         OBJ_DESTRUCT(&common_cuda_htod_lock);
@@ -1268,6 +1460,7 @@ int mca_common_cuda_memcpy(void *dst, void *src, size_t amount, char *msg,
 {
     CUresult result;
     int iter;
+    CUstream ipcStream = ipcStreams[cuda_event_ipc_first_avail%mca_common_cuda_d2d_nstreams];
 
     OPAL_THREAD_LOCK(&common_cuda_ipc_lock);
     /* First make sure there is room to store the event.  If not, then
@@ -1481,6 +1674,97 @@ int mca_common_cuda_record_htod_event(char *msg, struct mca_btl_base_descriptor_
     return OPAL_SUCCESS;
 }
 
+int mca_common_cuda_record_memcpy_event(char *msg, void *callback_frag)
+{
+    CUresult result;
+
+    /* First make sure there is room to store the event.  If not, then
+     * return an error.  The error message will tell the user to try and
+     * run again, but with a larger array for storing events. */
+    if (cuda_event_memcpy_num_used == cuda_event_max) {
+        opal_show_help("help-mpi-common-cuda.txt", "Out of cuEvent handles",
+                       true, cuda_event_max, cuda_event_max+100, cuda_event_max+100);
+        return OPAL_ERR_OUT_OF_RESOURCE;
+    }
+
+    if (cuda_event_memcpy_num_used > cuda_event_memcpy_most) {
+        cuda_event_memcpy_most = cuda_event_memcpy_num_used;
+        /* Just print multiples of 10 */
+        if (0 == (cuda_event_memcpy_most % 10)) {
+            opal_output_verbose(20, mca_common_cuda_output,
+                                "Maximum pack events used is now %d", cuda_event_memcpy_most);
+        }
+    }
+
+    result = cuFunc.cuEventRecord(cuda_event_memcpy_array[cuda_event_memcpy_first_avail], memcpyStream);
+    if (OPAL_UNLIKELY(CUDA_SUCCESS != result)) {
+        opal_show_help("help-mpi-common-cuda.txt", "cuEventRecord failed",
+                       true, OPAL_PROC_MY_HOSTNAME, result);
+        return OPAL_ERROR;
+    }
+    cuda_event_memcpy_callback_frag_array[cuda_event_memcpy_first_avail] = callback_frag;
+
+    /* Bump up the first available slot and number used by 1 */
+    cuda_event_memcpy_first_avail++;
+    if (cuda_event_memcpy_first_avail >= cuda_event_max) {
+        cuda_event_memcpy_first_avail = 0;
+    }
+    cuda_event_memcpy_num_used++;
+
+    return OPAL_SUCCESS;
+}
+
+int mca_common_cuda_save_op_event(char *msg, void *op_event_item, void *callback_frag)
+{
+    CUresult result;
+    
+    /* First make sure there is room to store the event.  If not, then
+     * return an error.  The error message will tell the user to try and
+     * run again, but with a larger array for storing events. */
+    if (cuda_event_op_num_used == cuda_event_max) {
+        opal_show_help("help-mpi-common-cuda.txt", "Out of cuEvent handles",
+                       true, cuda_event_max, cuda_event_max+100, cuda_event_max+100);
+        return OPAL_ERR_OUT_OF_RESOURCE;
+    }
+
+    if (cuda_event_op_num_used > cuda_event_op_most) {
+        cuda_event_op_most = cuda_event_op_num_used;
+        /* Just print multiples of 10 */
+        if (0 == (cuda_event_op_most % 10)) {
+            opal_output_verbose(20, mca_common_cuda_output,
+                                "Maximum pack events used is now %d", cuda_event_op_most);
+        }
+    }
+
+    cuda_event_op_array[cuda_event_op_first_avail] = (common_cuda_op_event_t *)op_event_item;
+    cuda_event_op_callback_frag_array[cuda_event_op_first_avail] = callback_frag;
+
+    /* Bump up the first available slot and number used by 1 */
+    cuda_event_op_first_avail++;
+    if (cuda_event_op_first_avail >= cuda_event_max) {
+        cuda_event_op_first_avail = 0;
+    }
+    cuda_event_op_num_used++;
+
+    return OPAL_SUCCESS;
+}
+
+int mca_common_cuda_record_op_event_item(void *op_event_item, void *cuda_stream)
+{
+    CUresult result;
+    common_cuda_op_event_t * op_event = (common_cuda_op_event_t *)op_event_item;
+    CUstream stream = (CUstream)cuda_stream;
+
+    result = cuFunc.cuEventRecord(op_event->cuda_event, stream);
+    if (OPAL_UNLIKELY(CUDA_SUCCESS != result)) {
+        opal_show_help("help-mpi-common-cuda.txt", "cuEventRecord failed",
+                       true, OPAL_PROC_MY_HOSTNAME, result);
+        return OPAL_ERROR;
+    }
+
+    return OPAL_SUCCESS;
+}
+
 /**
  * Used to get the dtoh stream for initiating asynchronous copies.
  */
@@ -1493,6 +1777,62 @@ void *mca_common_cuda_get_dtoh_stream(void) {
  */
 void *mca_common_cuda_get_htod_stream(void) {
     return (void *)htodStream;
+}
+
+void *mca_common_cuda_get_nccl_stream(void) {
+    return (void *)ncclStream;
+}
+
+void mca_common_cuda_sync_nccl_stream(void) {
+    cuFunc.cuStreamSynchronize(ncclStream);
+}
+
+void *mca_common_cuda_get_memcpy_stream(void) {
+    return (void *)memcpyStream;
+}
+
+void *mca_common_cuda_get_op_stream(int i) {
+    return (void *)opStreams[i];
+}
+
+void* mca_common_cuda_get_op_event_item(void) {
+    common_cuda_op_event_t *op_event_item = (common_cuda_op_event_t *)opal_list_remove_first(&common_cuda_op_event_list);
+    return (void*)op_event_item;
+}
+
+void mca_common_cuda_return_op_event_item(void *op_event_item)
+{
+    opal_list_append(&common_cuda_op_event_list, (opal_list_item_t*)op_event_item);
+}
+
+int mca_common_cuda_query_op_event_item(void *op_event_item)
+{
+    common_cuda_op_event_t *op_event = (common_cuda_op_event_t *)op_event_item;
+    CUresult result = cuFunc.cuEventQuery(op_event->cuda_event);
+
+    /* We found an event that is not ready, so return. */
+    if (CUDA_ERROR_NOT_READY == result) {
+        opal_output_verbose(30, mca_common_cuda_output,
+                            "CUDA: cuEventQuery returned CUDA_ERROR_NOT_READY");
+        return 0;
+    } else if (CUDA_SUCCESS != result) {
+        opal_show_help("help-mpi-common-cuda.txt", "cuEventQuery failed",
+                       true, result);
+        return -1;
+    }
+    return 1;
+}
+
+int mca_common_cuda_sync_op_event_item(void *op_event_item)
+{
+    common_cuda_op_event_t *op_event = (common_cuda_op_event_t *)op_event_item;
+    CUresult result = cuFunc.cuEventSynchronize(op_event->cuda_event);
+    if (CUDA_SUCCESS != result) {
+        opal_show_help("help-mpi-common-cuda.txt", "cuEventQuery failed",
+                       true, result);
+        return -1;
+    }
+    return 1;
 }
 
 /*
@@ -1635,6 +1975,91 @@ int progress_one_cuda_htod_event(struct mca_btl_base_descriptor_t **frag) {
         return 1;
     }
     OPAL_THREAD_UNLOCK(&common_cuda_htod_lock);
+    return 0;
+}
+
+/**
+ * Progress any memcpy event completions.
+ */
+int progress_one_cuda_memcpy_event(void **callback_frag) {
+    CUresult result;
+
+    if (cuda_event_memcpy_num_used > 0) {
+        opal_output_verbose(30, mca_common_cuda_output,
+                           "CUDA: progress_one_cuda_pack_event, outstanding_events=%d",
+                            cuda_event_memcpy_num_used);
+
+        result = cuFunc.cuEventQuery(cuda_event_memcpy_array[cuda_event_memcpy_first_used]);
+
+        /* We found an event that is not ready, so return. */
+        if (CUDA_ERROR_NOT_READY == result) {
+            opal_output_verbose(30, mca_common_cuda_output,
+                                "CUDA: cuEventQuery returned CUDA_ERROR_NOT_READY");
+            *callback_frag = NULL;
+            return 0;
+        } else if (CUDA_SUCCESS != result) {
+            opal_show_help("help-mpi-common-cuda.txt", "cuEventQuery failed",
+                           true, result);
+            *callback_frag = NULL;
+            return OPAL_ERROR;
+        }
+
+        *callback_frag = cuda_event_memcpy_callback_frag_array[cuda_event_memcpy_first_used];
+        opal_output_verbose(30, mca_common_cuda_output,
+                            "CUDA: cuEventQuery returned %d", result);
+
+        /* Bump counters, loop around the circular buffer if necessary */
+        --cuda_event_memcpy_num_used;
+        ++cuda_event_memcpy_first_used;
+        if (cuda_event_memcpy_first_used >= cuda_event_max) {
+            cuda_event_memcpy_first_used = 0;
+        }
+        /* A return value of 1 indicates an event completed and a frag was returned */
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * Progress any op event completions.
+ */
+int progress_one_cuda_op_event(void **callback_frag) {
+    CUresult result;
+
+    if (cuda_event_op_num_used > 0) {
+        opal_output_verbose(30, mca_common_cuda_output,
+                           "CUDA: progress_one_cuda_pack_event, outstanding_events=%d",
+                            cuda_event_memcpy_num_used);
+
+        common_cuda_op_event_t *op_event = cuda_event_op_array[cuda_event_op_first_used];
+        result = cuFunc.cuEventQuery(op_event->cuda_event);
+
+        /* We found an event that is not ready, so return. */
+        if (CUDA_ERROR_NOT_READY == result) {
+            opal_output_verbose(30, mca_common_cuda_output,
+                                "CUDA: cuEventQuery returned CUDA_ERROR_NOT_READY");
+            *callback_frag = NULL;
+            return 0;
+        } else if (CUDA_SUCCESS != result) {
+            opal_show_help("help-mpi-common-cuda.txt", "cuEventQuery failed",
+                           true, result);
+            *callback_frag = NULL;
+            return OPAL_ERROR;
+        }
+
+        *callback_frag = cuda_event_op_callback_frag_array[cuda_event_op_first_used];
+        opal_output_verbose(30, mca_common_cuda_output,
+                            "CUDA: cuEventQuery returned %d", result);
+
+        /* Bump counters, loop around the circular buffer if necessary */
+        --cuda_event_op_num_used;
+        ++cuda_event_op_first_used;
+        if (cuda_event_op_first_used >= cuda_event_max) {
+            cuda_event_op_first_used = 0;
+        }
+        /* A return value of 1 indicates an event completed and a frag was returned */
+        return 1;
+    }
     return 0;
 }
 
@@ -1846,6 +2271,10 @@ static int mca_common_cuda_is_gpu_buffer(const void *pUserBuf, opal_convertor_t 
     if (!stage_three_init_complete) {
         if (0 != mca_common_cuda_stage_three_init()) {
             opal_cuda_support = 0;
+        } else {
+            if (OPAL_SUCCESS != opal_cuda_kernel_support_init()) {
+                opal_cuda_kernel_support_fini();    
+            }
         }
     }
 
@@ -1999,6 +2428,37 @@ int mca_common_cuda_get_address_range(void *pbase, size_t *psize, void *base)
                             base, *(char **)pbase, *psize);
     }
     return 0;
+}
+
+int mca_common_cuda_memcpy_async(void *dest, const void *src, size_t size)
+{
+    if (mca_common_cuda_cumemcpy_async) {
+        return cuFunc.cuMemcpyAsync((CUdeviceptr)dest, (CUdeviceptr)src, size,memcpyStream);
+    } else {
+        opal_output_verbose(0, mca_common_cuda_output, "async memcpy is not enabled\n");
+        return -1;
+    }
+}
+
+int mca_common_cuda_sync_memcpy_stream(void)
+{
+    int result;
+    result = cuFunc.cuStreamSynchronize(memcpyStream);
+    if (OPAL_UNLIKELY(CUDA_SUCCESS != result)) {
+        opal_show_help("help-mpi-common-cuda.txt", "cuStreamSynchronize failed",
+                       true, OPAL_PROC_MY_HOSTNAME, result);
+        return OPAL_ERROR;
+    }   
+    return 0;
+}
+
+int mca_common_cuda_is_stage_three_init()
+{
+    if (true == stage_three_init_complete) {
+        return 1;
+    } else {
+        return 0;
+    }
 }
 
 #if OPAL_CUDA_GDR_SUPPORT
