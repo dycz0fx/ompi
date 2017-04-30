@@ -717,6 +717,7 @@ int32_t opal_recude_op_sum_double(void *source, void *target, int count, void *c
     long total_time;
 #endif
     double alpha = 1;
+    float alpha_f = 1;
     cublasStatus_t stat;
     int is_sync = 0;
 
@@ -729,7 +730,8 @@ int32_t opal_recude_op_sum_double(void *source, void *target, int count, void *c
     } else {
         cublasSetStream(cublas_handle, (cudaStream_t)cublas_outer_stream);
     }
-    stat = cublasDaxpy(cublas_handle, count, &alpha, (const double *)source, 1, (double *)target, 1);
+    //stat = cublasDaxpy(cublas_handle, count, &alpha, (const double *)source, 1, (double *)target, 1);
+    stat = cublasSaxpy(cublas_handle, count, &alpha_f, (const float *)source, 1, (float *)target, 1);
     if (stat != CUBLAS_STATUS_SUCCESS) { 
         DT_CUDA_DEBUG( opal_cuda_output( 0, "cublasDaxpy error.\n"); );
         return -1; 
