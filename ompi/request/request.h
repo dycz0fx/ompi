@@ -135,6 +135,7 @@ struct ompi_request_t {
     ompi_request_complete_fn_t req_complete_cb; /**< Called when the request is MPI completed */
     void *req_complete_cb_data;
     ompi_mpi_object_t req_mpi_object;           /**< Pointer to MPI object that created this request */
+    opal_mutex_t * req_lock;                   //lock the request for request_complete and set_callback
 };
 
 /**
@@ -428,29 +429,57 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
  *  this function, or the synchronization primitive might not be correctly
  *  triggered.
  */
+
 static inline int ompi_request_complete(ompi_request_t* request, bool with_signal)
 {
     int rc = 0;
-
-    if( NULL != request->req_complete_cb) {
-        rc = request->req_complete_cb( request );
+    
+    OPAL_THREAD_LOCK(request->req_lock);
+    if(NULL != request->req_complete_cb) {
+        ompi_request_complete_fn_t temp = request->req_complete_cb;
         request->req_complete_cb = NULL;
+        rc = temp( request );
+        if (rc >= 1) {
+            return rc;
+        }
     }
-
+    
     if (0 == rc) {
         if( OPAL_LIKELY(with_signal) ) {
             if(!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED)) {
-                ompi_wait_sync_t *tmp_sync = (ompi_wait_sync_t *) OPAL_ATOMIC_SWAP_PTR(&request->req_complete,
-                                                                                       REQUEST_COMPLETED);
+                ompi_wait_sync_t *tmp_sync = (ompi_wait_sync_t *) OPAL_ATOMIC_SWAP_PTR(&request->req_complete, REQUEST_COMPLETED);
                 /* In the case where another thread concurrently changed the request to REQUEST_PENDING */
                 if( REQUEST_PENDING != tmp_sync )
                     wait_sync_update(tmp_sync, 1, request->req_status.MPI_ERROR);
             }
-        } else
+        } else {
             request->req_complete = REQUEST_COMPLETED;
+        }
     }
-
+    
+    OPAL_THREAD_UNLOCK(request->req_lock);
     return OMPI_SUCCESS;
+}
+
+static inline int ompi_request_set_callback(ompi_request_t* request,
+                                            ompi_request_complete_fn_t cb,
+                                            void* cb_data)
+{
+    OPAL_THREAD_LOCK (request->req_lock);
+    request->req_complete_cb_data = cb_data;
+    request->req_complete_cb = cb;
+    int rc = 0;
+    /* request is completed and the callback is not called, need to call callback myself */
+    if ((NULL != request->req_complete_cb) && (request->req_complete == REQUEST_COMPLETED)) {
+        ompi_request_complete_fn_t temp = request->req_complete_cb;
+        request->req_complete_cb = NULL;
+        rc = temp( request );
+        if (rc >= 1) {
+            return rc;
+        }
+    }
+    OPAL_THREAD_UNLOCK (request->req_lock);
+    return rc;
 }
 
 END_C_DECLS
