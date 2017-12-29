@@ -443,7 +443,7 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
             return rc;
         }
     }
-    
+
     if (0 == rc) {
         if( OPAL_LIKELY(with_signal) ) {
             if(!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED)) {
@@ -456,7 +456,7 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
             request->req_complete = REQUEST_COMPLETED;
         }
     }
-    
+
     OPAL_THREAD_UNLOCK(request->req_lock);
     return OMPI_SUCCESS;
 }

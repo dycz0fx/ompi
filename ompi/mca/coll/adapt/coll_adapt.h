@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014      The University of Tennessee and The University
+ * Copyright (c) 2014-2018 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * $COPYRIGHT$
@@ -140,7 +140,7 @@ typedef struct mca_coll_adapt_comm_t {
 /** Coll sm module */
 struct mca_coll_adapt_module_t {
     /** Base module */
-	mca_coll_base_module_t super;
+    mca_coll_base_module_t super;
     
     /* Whether this module has been lazily initialized or not yet */
     bool enabled;
@@ -148,7 +148,7 @@ struct mca_coll_adapt_module_t {
     /* Data that hangs off the communicator */
 	mca_coll_adapt_comm_t *adapt_comm_data;
     
-        /* Underlying reduce function and module */
+    /* Underlying reduce function and module */
 	mca_coll_base_module_reduce_fn_t previous_reduce;
 	mca_coll_base_module_t *previous_reduce_module;
 };

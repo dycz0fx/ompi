@@ -1,3 +1,14 @@
+/*
+ * Copyright (c) 2014-2018 The University of Tennessee and The University
+ *                         of Tennessee Research Foundation.  All rights
+ *                         reserved.
+ * $COPYRIGHT$
+ *
+ * Additional copyrights may follow
+ *
+ * $HEADER$
+ */
+
 #include "ompi/mca/coll/coll.h"
 #include "ompi/mca/coll/base/coll_base_topo.h"  //ompi_coll_tree_t
 #include "ompi/mca/coll/base/coll_base_functions.h" //COLL_BASE_COMPUTE_BLOCKCOUNT

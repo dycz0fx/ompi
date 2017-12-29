@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2014      The University of Tennessee and The University
+# Copyright (c) 2014-2018 The University of Tennessee and The University
 #                         of Tennessee Research Foundation.  All rights
 #                         reserved.
 # $COPYRIGHT$
@@ -35,10 +35,10 @@ sources = \
 
 # If we have cuda support, modify file list and flags
 if OPAL_cuda_support
-sources += coll_adapt_cuda.c
-sources += coll_adapt_cuda.h
-sources += coll_adapt_cuda_mpool.c
-sources += coll_adapt_cuda_mpool.h
+sources += coll_adapt_cuda.c \
+           coll_adapt_cuda.h \
+           coll_adapt_cuda_mpool.c \
+           coll_adapt_cuda_mpool.h
 SUBDIRS      = . cuda
 endif
 

@@ -1,3 +1,14 @@
+/*
+ * Copyright (c) 2014-2018 The University of Tennessee and The University
+ *                         of Tennessee Research Foundation.  All rights
+ *                         reserved.
+ * $COPYRIGHT$
+ *
+ * Additional copyrights may follow
+ *
+ * $HEADER$
+ */
+
 #include "ompi/mca/coll/coll.h"
 #include "opal/class/opal_free_list.h"
 #include "opal/class/opal_list.h"
@@ -7,7 +18,7 @@
 #include "ompi/mca/coll/base/coll_base_topo.h"
 #include "coll_adapt_inbuf.h"
 
-#if OPAL_CUDA_SUPPORT  
+#if OPAL_CUDA_SUPPORT
 #define CPU_BUFFER_MEMCPY_DONE  1
 #define CPU_BUFFER_MEMCPY_NOT_DONE  0
 #define CPU_BUFFER_MEMCPY_PENDING  2

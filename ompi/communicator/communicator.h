@@ -189,8 +189,8 @@ struct ompi_communicator_t {
     
     /* For adapt module, handle concurrent non blocking collective
        Count number of non blocking issued for tag
-       | 16 bits          | 16 bits    |
-       | collective count | segment id | */
+       |4 bits         | 12 bits         | 16 bits    |
+       |collective type|collective count | segment id | */
     int c_ibcast_tag;
     int c_ireduce_tag;
     int c_iallreduce_tag;

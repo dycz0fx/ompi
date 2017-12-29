@@ -1,3 +1,14 @@
+/*
+ * Copyright (c) 2014-2018 The University of Tennessee and The University
+ *                         of Tennessee Research Foundation.  All rights
+ *                         reserved.
+ * $COPYRIGHT$
+ *
+ * Additional copyrights may follow
+ *
+ * $HEADER$
+ */
+
 #ifndef MCA_COLL_ADAPT_INBUF_H
 #define MCA_COLL_ADAPT_INBUF_H
 

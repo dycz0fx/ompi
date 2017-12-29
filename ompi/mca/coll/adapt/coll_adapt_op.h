@@ -1,3 +1,14 @@
+/*
+ * Copyright (c) 2014-2018 The University of Tennessee and The University
+ *                         of Tennessee Research Foundation.  All rights
+ *                         reserved.
+ * $COPYRIGHT$
+ *
+ * Additional copyrights may follow
+ *
+ * $HEADER$
+ */
+
 #ifndef COLL_ADAPT_OP_H
 #define COLL_ADAPT_OP_H
 

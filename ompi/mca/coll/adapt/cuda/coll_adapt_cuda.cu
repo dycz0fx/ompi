@@ -1,3 +1,14 @@
+/*
+* Copyright (c) 2014-2018 The University of Tennessee and The University
+*                         of Tennessee Research Foundation.  All rights
+*                         reserved.
+* $COPYRIGHT$
+*
+* Additional copyrights may follow
+*
+* $HEADER$
+*/
+
 #include "ompi_config.h"
 #include "coll_adapt_cuda.cuh"
 
@@ -51,10 +62,8 @@ int coll_adapt_cuda_init(void)
 
     cuda_err = cudaGetDevice(&device);
     if( cudaSuccess != cuda_err ) {
-       // OPAL_OUTPUT_VERBOSE((0, opal_datatype_cuda_output, "Cannot retrieve the device being used. Drop CUDA support!\n"));
         return -1;
     }
-    //cudaStreamCreate(&op_internal_stream);
     cublasStatus_t stat;
     stat = cublasCreate(&cublas_handle); 
     if (stat != CUBLAS_STATUS_SUCCESS) { 
@@ -83,7 +92,6 @@ void* coll_adapt_cuda_malloc(size_t size)
     void *ptr = NULL;
     cuda_err = cudaMalloc((void**)&ptr, size);
     if( cudaSuccess != cuda_err ) {
-       // OPAL_OUTPUT_VERBOSE((0, opal_datatype_cuda_output, "Cannot retrieve the device being used. Drop CUDA support!\n"));
         return NULL;
     } else {
         return ptr;
@@ -100,7 +108,6 @@ int coll_adapt_cuda_is_gpu_buffer(const void *ptr)
     if (res != CUDA_SUCCESS) {
         /* If we cannot determine it is device pointer,
          * just assume it is not. */
-      //  OPAL_OUTPUT_VERBOSE((1, opal_datatype_cuda_output, "!!!!!!! %p is not a gpu buffer. Take no-CUDA path!\n", ptr));
         return 0;
     }
     /* Anything but CU_MEMORYTYPE_DEVICE is not a GPU memory */
@@ -118,7 +125,6 @@ int coll_adapt_cuda_op_sum_float(void *source, void *target, int count, void *op
     } else {
         cublasSetStream(cublas_handle, (cudaStream_t)op_stream);
     }
-    //stat = cublasDaxpy(cublas_handle, count, &alpha, (const double *)source, 1, (double *)target, 1);
     cublasStatus_t stat = cublasSaxpy(cublas_handle, count, &alpha_f, (const float *)source, 1, (float *)target, 1);
     if (stat != CUBLAS_STATUS_SUCCESS) { 
         printf("cublasSaxpy error %s. src %p, targrt %p, count %d\n", _cudaGetErrorEnum(stat), source, target, count);

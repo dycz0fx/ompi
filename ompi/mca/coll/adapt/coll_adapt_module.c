@@ -1,6 +1,6 @@
 
 /*
- * Copyright (c) 2014      The University of Tennessee and The University
+ * Copyright (c) 2014-2018 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * $COPYRIGHT$
@@ -8,15 +8,6 @@
  * Additional copyrights may follow
  * 
  * $HEADER$
- */
-/**
- * @file
- *
- * Warning: this is not for the faint of heart -- don't even bother
- * reading this source code if you don't have a strong understanding
- * of nested data structures and pointer math (remember that
- * associativity and order of C operations is *critical* in terms of
- * pointer math!).
  */
 
 #include "ompi_config.h"

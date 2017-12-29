@@ -1,3 +1,14 @@
+/*
+ * Copyright (c) 2014-2018 The University of Tennessee and The University
+ *                         of Tennessee Research Foundation.  All rights
+ *                         reserved.
+ * $COPYRIGHT$
+ *
+ * Additional copyrights may follow
+ *
+ * $HEADER$
+ */
+
 #include "coll_adapt.h"
 #include "coll_adapt_cuda.h"
 #include "coll_adapt_cuda_mpool.h"
@@ -137,7 +148,6 @@ int coll_adapt_cuda_progress(void)
         if (context != NULL) {
             int *flag = (int *)(context + sizeof(opal_free_list_item_t));
             if (*flag == COLL_ADAPT_CONTEXT_FLAGS_CUDA_REDUCE) {
-              //  opal_output(0, "reduce call back\n");
                 mca_coll_adapt_reduce_context_t *reduce_context = (mca_coll_adapt_reduce_context_t *)context;
                 assert(reduce_context->cuda_callback != NULL);
                 reduce_context->cuda_callback(reduce_context);
@@ -148,7 +158,6 @@ int coll_adapt_cuda_progress(void)
         if (context != NULL) {
             int *flag = (int *)(context + sizeof(opal_free_list_item_t));
             if (*flag == COLL_ADAPT_CONTEXT_FLAGS_CUDA_BCAST) {
-        //        opal_output(0, "bcast call back\n");
                 mca_coll_adapt_bcast_context_t *bcast_context = (mca_coll_adapt_bcast_context_t *)context;
                 assert(bcast_context->cuda_callback != NULL);
                 bcast_context->cuda_callback(bcast_context);
