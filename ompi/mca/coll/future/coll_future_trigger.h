@@ -45,11 +45,11 @@ int init_future(mca_coll_future_t *f);
 /* init task */
 int init_task(mca_coll_task_t *t, task_func_ptr func_ptr, void *func_argu);
 
-/* add left task to future */
-int add_left(mca_coll_task_t *t, mca_coll_future_t *f);
+/* add butterfly task to future */
+int add_butterfly(mca_coll_task_t *t, mca_coll_future_t *f);
 
-/* add right task to future */
-int add_right(mca_coll_task_t *t, mca_coll_future_t *f);
+/* add tornado task to future */
+int add_tornado(mca_coll_task_t *t, mca_coll_future_t *f);
 
 /* run the task */
 int execute_task(mca_coll_task_t *t);
