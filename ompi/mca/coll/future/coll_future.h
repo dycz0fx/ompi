@@ -38,6 +38,7 @@
 #include "opal/runtime/opal_progress.h"
 #include "ompi/mca/pml/pml.h"
 #include "ompi/mca/coll/base/coll_tags.h"
+#include "ompi/mca/coll/base/coll_base_functions.h"
 
 BEGIN_C_DECLS
 
@@ -86,10 +87,7 @@ int ompi_coll_future_lazy_enable(mca_coll_base_module_t *module,
                                  struct ompi_communicator_t *comm);
 
 int mca_coll_future_bcast_intra(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
-
-int wrap_bcast_binomial(void *bcast_argu);
-int mca_coll_future_bcast_binomial(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
-int mca_coll_future_bcast_intra_generic(void* buffer, int original_count, struct ompi_datatype_t* datatype, int root, struct ompi_communicator_t* comm, mca_coll_base_module_t *module, uint32_t count_by_segment, ompi_coll_tree_t* tree);
+int mca_coll_future_bcast_wrapper(void *bcast_argu);
 
 END_C_DECLS
 
