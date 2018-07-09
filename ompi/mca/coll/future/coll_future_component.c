@@ -87,7 +87,7 @@ mca_coll_future_component_t mca_coll_future_component = {
     
     /* (default) priority */
     /* JMS temporarily lowered until we can get more testing */
-    0,
+    50,
 };
 
 

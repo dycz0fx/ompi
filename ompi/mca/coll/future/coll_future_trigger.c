@@ -37,18 +37,18 @@ int init_task(mca_coll_task_t *t, task_func_ptr func_ptr, void *func_argu){
     return OMPI_SUCCESS;
 }
 
-/* add left task to future */
-int add_left(mca_coll_task_t *t, mca_coll_future_t *f){
-    printf("add_left\n");
+/* add butterfly task to future */
+int add_butterfly(mca_coll_task_t *t, mca_coll_future_t *f){
+    printf("add_butterfly\n");
     f->count++;
     t->future_list[t->future_list_size] = f;
     t->future_list_size++;
     return OMPI_SUCCESS;
 }
 
-/* add right task to future */
-int add_right(mca_coll_task_t *t, mca_coll_future_t *f){
-    printf("add_right\n");
+/* add tornado task to future */
+int add_tornado(mca_coll_task_t *t, mca_coll_future_t *f){
+    printf("add_tornado\n");
     f->task_list[f->task_list_size] = t;
     f->task_list_size++;
     return OMPI_SUCCESS;
@@ -56,7 +56,7 @@ int add_right(mca_coll_task_t *t, mca_coll_future_t *f){
 
 /* run the task */
 int execute_task(mca_coll_task_t *t){
-    printf("execute_taks\n");
+    printf("execute_taks %p\n", (void *)t);
     t->func_ptr(t->func_argu);
     int i;
     for (i=0; i<t->future_list_size; i++) {
@@ -67,7 +67,7 @@ int execute_task(mca_coll_task_t *t){
 
 /* trigger the future */
 int trigger_future(mca_coll_future_t *f){
-    printf("trigger_future\n");
+    printf("trigger_future %p\n", (void *)f);
     int i;
     f->count--;
     if (f->count == 0) {
