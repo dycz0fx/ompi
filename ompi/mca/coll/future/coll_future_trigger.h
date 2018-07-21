@@ -2,23 +2,12 @@
 
 typedef int (*task_func_ptr) (void *);
 
-struct mca_bcast_argu_s {
-    void *buff;
-    int count;
-    struct ompi_datatype_t *dtype;
-    int root;
-    struct ompi_communicator_t *comm;
-    mca_coll_base_module_t *module;
-    bool noop;
-};
-typedef struct mca_bcast_argu_s mca_bcast_argu_t;
-
-/* left task will trigger right task by future*/
+/* bufferfly task will trigger tornado task by future*/
 struct mca_coll_future_s {
     opal_object_t  super;
-    /* number of left tasks needed to trigger the right tasks */
+    /* number of bufferfly tasks needed to trigger the tornado tasks */
     int count;
-    /* a list to store every right task */
+    /* a list to store every tornado task */
     struct mca_coll_task_s **task_list;
     int task_list_size;
 };
@@ -56,3 +45,10 @@ int execute_task(mca_coll_task_t *t);
 
 /* trigger the future */
 int trigger_future(mca_coll_future_t *f);
+
+/* free the task */
+void free_task(mca_coll_task_t *t);
+
+/* free the future */
+void free_future(mca_coll_future_t *f);
+
