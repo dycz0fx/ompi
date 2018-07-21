@@ -26,7 +26,8 @@ coll_future_trigger.h \
 coll_future_bcast.c \
 coll_future_component.c \
 coll_future_module.c \
-coll_future_trigger.c
+coll_future_trigger.c \
+coll_future_utils.c
 
 # Make the output library in this directory, and name it either
 # mca_<type>_<name>.la (for DSO builds) or libmca_<type>_<name>.la

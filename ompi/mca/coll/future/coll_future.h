@@ -41,6 +41,36 @@
 #include "ompi/mca/coll/base/coll_base_functions.h"
 
 BEGIN_C_DECLS
+#define MAX_TASK_NUM 8
+#define MAX_FUTURE_NUM 8
+
+struct mca_bcast_argu_s {
+    void *buff;
+    int count;
+    struct ompi_datatype_t *dtype;
+    int root;
+    struct ompi_communicator_t *comm;
+    bool noop;
+};
+typedef struct mca_bcast_argu_s mca_bcast_argu_t;
+
+struct mca_bcast_next_argu_s {
+    void *buff;
+    int up_seg_count;
+    int low_seg_count;
+    struct ompi_datatype_t *dtype;
+    int root_sm_rank;
+    int root_leader_rank;
+    struct ompi_communicator_t *up_comm;
+    struct ompi_communicator_t *low_comm;
+    int num_segments;
+    int sm_rank;
+    int cur_seg;
+    int w_rank;
+    int last_seg_count;
+};
+typedef struct mca_bcast_next_argu_s mca_bcast_next_argu_t;
+
 
 /**
  * Structure to hold the future coll component.  First it holds the
@@ -64,6 +94,10 @@ typedef struct mca_coll_future_module_t {
     /* Whether this module has been lazily initialized or not yet */
     bool enabled;
     
+    struct ompi_communicator_t *cached_comm;
+    struct ompi_communicator_t *cached_sm_comm;
+    struct ompi_communicator_t *cached_leader_comm;
+    int *cached_vranks;
 } mca_coll_future_module_t;
 OBJ_CLASS_DECLARATION(mca_coll_future_module_t);
 
@@ -87,7 +121,12 @@ int ompi_coll_future_lazy_enable(mca_coll_base_module_t *module,
                                  struct ompi_communicator_t *comm);
 
 int mca_coll_future_bcast_intra(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
-int mca_coll_future_bcast_wrapper(void *bcast_argu);
+int mca_coll_future_bcast(void *bcast_argu);
+int mca_coll_future_nextbcast(void *bcast_next_argu);
+void mac_coll_future_set_bcast_argu(mca_bcast_argu_t *argu, void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, bool noop);
+void mac_coll_future_set_nextbcast_argu(mca_bcast_next_argu_t *argu, void *buff, int up_seg_count, int low_seg_count, struct ompi_datatype_t *dtype, int root_sm_rank, int root_leader_rank, struct ompi_communicator_t *up_comm, struct ompi_communicator_t *low_comm, int num_segments, int sm_rank, int cur_seg, int w_rank, int last_seg_count);
+void mca_coll_future_reset_seg_count(int *up_seg_count, int *low_seg_count, int *count);
+void mca_coll_future_get_ranks(int *vranks, int root, int sm_size, int *root_sm_rank, int *root_leader_rank);
 
 END_C_DECLS
 
