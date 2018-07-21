@@ -79,6 +79,10 @@ static void mca_coll_future_module_construct(mca_coll_future_module_t *module)
 {
     module->enabled = false;
     module->super.coll_module_disable = mca_coll_future_module_disable;
+    module->cached_comm = NULL;
+    module->cached_sm_comm = NULL;
+    module->cached_leader_comm = NULL;
+    module->cached_vranks = NULL;
 }
 
 /*
@@ -87,6 +91,15 @@ static void mca_coll_future_module_construct(mca_coll_future_module_t *module)
 static void mca_coll_future_module_destruct(mca_coll_future_module_t *module)
 {
     module->enabled = false;
+    if (module->cached_sm_comm != NULL) {
+        ompi_comm_free(&(module->cached_sm_comm));
+    }
+    if (module->cached_leader_comm != NULL) {
+        ompi_comm_free(&(module->cached_leader_comm));
+    }
+    if (module->cached_vranks != NULL) {
+        free(module->cached_vranks);
+    }
 }
 
 /*
