@@ -156,6 +156,11 @@ mca_coll_adapt_comm_query(struct ompi_communicator_t *comm, int *priority)
         return NULL;
     }
     
+    mca_coll_base_comm_t * data = OBJ_NEW(mca_coll_base_comm_t);
+    if (NULL == data) {
+        return NULL;
+    }
+    
     /* All is good -- return a module */
     adapt_module->super.coll_module_enable = adapt_module_enable;
     adapt_module->super.ft_event        = NULL;
@@ -177,6 +182,25 @@ mca_coll_adapt_comm_query(struct ompi_communicator_t *comm, int *priority)
     adapt_module->super.coll_scatterv   = NULL;
     adapt_module->super.coll_ibcast      = mca_coll_adapt_ibcast_intra;
     
+    /* general n fan out tree */
+    data->cached_ntree = NULL;
+    /* binary tree */
+    data->cached_bintree = NULL;
+    /* binomial tree */
+    data->cached_bmtree = NULL;
+    /* binomial tree */
+    data->cached_in_order_bmtree = NULL;
+    /* chains (fanout followed by pipelines) */
+    data->cached_chain = NULL;
+    /* standard pipeline */
+    data->cached_pipeline = NULL;
+    /* in-order binary tree */
+    data->cached_in_order_bintree = NULL;
+    /* linear */
+    data->cached_linear = NULL;
+    /* All done */
+    adapt_module->super.base_data = data;
+
     opal_output_verbose(10, ompi_coll_base_framework.framework_output,
                         "coll:adapt:comm_query (%d/%s): pick me! pick me!",
                         comm->c_contextid, comm->c_name);
