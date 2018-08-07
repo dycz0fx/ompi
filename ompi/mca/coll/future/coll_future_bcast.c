@@ -29,7 +29,14 @@ void mac_coll_future_set_nextbcast_argu(mca_bcast_next_argu_t *argu, void *buff,
     argu->last_seg_count = last_seg_count;
 }
 
-int mca_coll_future_bcast_intra(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module) {
+int
+mca_coll_future_bcast_intra(void *buff,
+                            int count,
+                            struct ompi_datatype_t *dtype,
+                            int root,
+                            struct ompi_communicator_t *comm,
+                            mca_coll_base_module_t *module)
+{
     ptrdiff_t extent, lb;
     ompi_datatype_get_extent(dtype, &lb, &extent);
     int w_size, w_rank, i;
