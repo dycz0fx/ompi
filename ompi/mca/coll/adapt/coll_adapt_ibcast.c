@@ -200,7 +200,7 @@ int mca_coll_adapt_ibcast_binomial(void *buff, int count, struct ompi_datatype_t
 }
 
 int mca_coll_adapt_ibcast_in_order_binomial(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module, int ibcast_tag){
-    OPAL_OUTPUT_VERBOSE((10, mca_coll_adapt_component.adapt_output, "binomial\n"));
+    OPAL_OUTPUT_VERBOSE((10, mca_coll_adapt_component.adapt_output, "in_order_binomial\n"));
     mca_coll_base_comm_t *coll_comm = module->base_data;
     if( !( (coll_comm->cached_in_order_bmtree) && (coll_comm->cached_in_order_bmtree_root == root) ) ) {
         if( coll_comm->cached_in_order_bmtree ) { /* destroy previous binomial if defined */
