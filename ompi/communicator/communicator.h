@@ -187,6 +187,9 @@ struct ompi_communicator_t {
 
     /* Collectives module interface and data */
     mca_coll_base_comm_coll_t *c_coll;
+    
+    /* Non-blocking collective tag */
+    int c_ibcast_tag;
 };
 typedef struct ompi_communicator_t ompi_communicator_t;
 
