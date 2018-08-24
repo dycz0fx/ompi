@@ -71,6 +71,35 @@ struct mca_bcast_next_argu_s {
 };
 typedef struct mca_bcast_next_argu_s mca_bcast_next_argu_t;
 
+struct mca_bcast_first_argu_s {
+    void *buff;
+    int count;
+    struct ompi_datatype_t *dtype;
+    int root;
+    struct ompi_communicator_t *comm;
+    int num;
+    bool noop;
+};
+typedef struct mca_bcast_first_argu_s mca_bcast_first_argu_t;
+
+struct mca_bcast_mid_argu_s {
+    void *buff;
+    int up_seg_count;
+    int low_seg_count;
+    struct ompi_datatype_t *dtype;
+    int root_sm_rank;
+    int root_leader_rank;
+    struct ompi_communicator_t *up_comm;
+    struct ompi_communicator_t *low_comm;
+    int up_num;
+    int low_num;
+    int num_segments;
+    int cur_seg;
+    int w_rank;
+    int last_seg_count;
+    bool noop;
+};
+typedef struct mca_bcast_mid_argu_s mca_bcast_mid_argu_t;
 
 /**
  * Structure to hold the future coll component.  First it holds the
@@ -84,6 +113,13 @@ typedef struct mca_coll_future_component_t {
     
     /** MCA parameter: Priority of this component */
     int future_priority;
+    /* whether output the log message */
+    int future_output;
+    /* up level segment count */
+    int future_up_count;
+    /* low level segment count */
+    int future_low_count;
+    
 } mca_coll_future_component_t;
 
 /** Coll future module */
@@ -127,7 +163,17 @@ void mac_coll_future_set_bcast_argu(mca_bcast_argu_t *argu, void *buff, int coun
 void mac_coll_future_set_nextbcast_argu(mca_bcast_next_argu_t *argu, void *buff, int up_seg_count, int low_seg_count, struct ompi_datatype_t *dtype, int root_sm_rank, int root_leader_rank, struct ompi_communicator_t *up_comm, struct ompi_communicator_t *low_comm, int num_segments, int sm_rank, int cur_seg, int w_rank, int last_seg_count);
 void mca_coll_future_reset_seg_count(int *up_seg_count, int *low_seg_count, int *count);
 void mca_coll_future_get_ranks(int *vranks, int root, int sm_size, int *root_sm_rank, int *root_leader_rank);
-
+int
+mca_coll_future_bcast_intra_adapt(void *buff,
+                                  int count,
+                                  struct ompi_datatype_t *dtype,
+                                  int root,
+                                  struct ompi_communicator_t *comm,
+                                  mca_coll_base_module_t *module);
+void mac_coll_future_set_first_argu(mca_bcast_first_argu_t *argu, void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, int num, bool noop);
+void mac_coll_future_set_mid_argu(mca_bcast_mid_argu_t *argu, void *buff, int up_seg_count, int low_seg_count, struct ompi_datatype_t *dtype, int root_sm_rank, int root_leader_rank, struct ompi_communicator_t *up_comm, struct ompi_communicator_t *low_comm, int up_num, int low_num, int num_segments, int cur_seg, int w_rank, int last_seg_count, bool noop);
+int mca_coll_future_first_task(void *task_argu);
+int mca_coll_future_mid_task(void *task_argu);
 END_C_DECLS
 
 #endif /* MCA_COLL_SM_EXPORT_H */
