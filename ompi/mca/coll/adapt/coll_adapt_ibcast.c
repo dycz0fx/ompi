@@ -160,7 +160,7 @@ static int recv_cb(ompi_request_t *req){
 
 
 int mca_coll_adapt_ibcast_intra(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module){
-    printf("adapt\n");
+    //printf("adapt\n");
     /* if count == 0, just return a completed request */
     if (count == 0) {
         ompi_request_t *temp_request;
@@ -219,7 +219,15 @@ int mca_coll_adapt_ibcast_binary(void *buff, int count, struct ompi_datatype_t *
 
 int mca_coll_adapt_ibcast_pipeline(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module, int ibcast_tag){
     OPAL_OUTPUT_VERBOSE((10, mca_coll_adapt_component.adapt_output, "pipeline\n"));
-    return OMPI_SUCCESS;
+    mca_coll_base_comm_t *coll_comm = module->base_data;
+    if( !( (coll_comm->cached_pipeline) && (coll_comm->cached_pipeline_root == root) ) ) {
+        if( coll_comm->cached_pipeline ) { /* destroy previous pipeline if defined */
+            ompi_coll_base_topo_destroy_tree( &(coll_comm->cached_pipeline) );
+        }
+        coll_comm->cached_pipeline = ompi_coll_base_topo_build_chain(1, comm, root);
+        coll_comm->cached_pipeline_root = root;
+    }
+    return mca_coll_adapt_ibcast_generic(buff, count, datatype, root, comm, request, module, coll_comm->cached_pipeline, ibcast_tag);
 }
 
 int mca_coll_adapt_ibcast_chain(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module, int ibcast_tag){

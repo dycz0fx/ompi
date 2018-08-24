@@ -58,10 +58,28 @@ int add_tornado(mca_coll_task_t *t, mca_coll_future_t *f){
     return OMPI_SUCCESS;
 }
 
-/* run the task */
+/* run and complete task */
 int execute_task(mca_coll_task_t *t){
     //printf("execute_taks %p\n", (void *)t);
     t->func_ptr(t->func_argu);
+    int i;
+    for (i=0; i<t->future_list_size; i++) {
+        trigger_future(t->future_list[i]);
+    }
+    free_task(t);
+    return OMPI_SUCCESS;
+}
+
+/* issue the task, non blocking version of execute_task */
+int issue_task(mca_coll_task_t *t){
+    //printf("issue %p\n", (void *)t);
+    t->func_ptr(t->func_argu);
+    return OMPI_SUCCESS;
+}
+
+/* complete the task, complete the corresponding task */
+int complete_task(mca_coll_task_t *t){
+    //printf("complete %p\n", (void *)t);
     int i;
     for (i=0; i<t->future_list_size; i++) {
         trigger_future(t->future_list[i]);

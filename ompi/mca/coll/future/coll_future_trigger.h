@@ -40,8 +40,14 @@ int add_butterfly(mca_coll_task_t *t, mca_coll_future_t *f);
 /* add tornado task to future */
 int add_tornado(mca_coll_task_t *t, mca_coll_future_t *f);
 
-/* run the task */
+/* run and complete task */
 int execute_task(mca_coll_task_t *t);
+
+/* issue the task, non blocking version of execute_task */
+int issue_task(mca_coll_task_t *t);
+
+/* complete the task, complete the corresponding task */
+int complete_task(mca_coll_task_t *t);
 
 /* trigger the future */
 int trigger_future(mca_coll_future_t *f);
@@ -51,4 +57,3 @@ void free_task(mca_coll_task_t *t);
 
 /* free the future */
 void free_future(mca_coll_future_t *f);
-

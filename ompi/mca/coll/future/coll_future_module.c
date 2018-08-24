@@ -179,7 +179,7 @@ mca_coll_future_comm_query(struct ompi_communicator_t *comm, int *priority)
     future_module->super.coll_alltoallv  = NULL;
     future_module->super.coll_alltoallw  = NULL;
     future_module->super.coll_barrier    = NULL;
-    future_module->super.coll_bcast      = mca_coll_future_bcast_intra;
+    future_module->super.coll_bcast      = mca_coll_future_bcast_intra_adapt;
     future_module->super.coll_exscan     = NULL;
     future_module->super.coll_gather     = NULL;
     future_module->super.coll_gatherv    = NULL;
