@@ -41,8 +41,8 @@
 #include "ompi/mca/coll/base/coll_base_functions.h"
 
 BEGIN_C_DECLS
-#define MAX_TASK_NUM 8
-#define MAX_FUTURE_NUM 8
+#define MAX_TASK_NUM 16
+#define MAX_FUTURE_NUM 16
 
 struct mca_bcast_argu_s {
     void *buff;
