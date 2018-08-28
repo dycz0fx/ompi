@@ -328,17 +328,17 @@ mca_coll_future_bcast_intra_adapt(void *buff,
     int w_size, w_rank, i;
     w_size = ompi_comm_size(comm);
     w_rank = ompi_comm_rank(comm);
-    int up_seg_count = 65536;
-    int low_seg_count = 524288;
+    int up_seg_count = mca_coll_future_component.future_up_count;
+    int low_seg_count = mca_coll_future_component.future_low_count;
     mca_coll_future_reset_seg_count(&up_seg_count, &low_seg_count, &count);
     int max_seg_count = (up_seg_count > low_seg_count) ? up_seg_count : low_seg_count;
     int up_num = max_seg_count / up_seg_count;
     int low_num = max_seg_count / low_seg_count;
-    if (up_num > MAX_TASK_NUM || low_num > MAX_TASK_NUM) {
-        return OMPI_ERROR;
-    }
+    //if (up_num > MAX_TASK_NUM || low_num > MAX_TASK_NUM) {
+    //    return OMPI_ERROR;
+    //}
     int num_segments = (count + max_seg_count - 1) / max_seg_count;
-    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "In Future up_count %d low_count %d count %d num_seg %d\n", up_seg_count, low_seg_count, count, num_segments));
+    OPAL_OUTPUT_VERBOSE((20, mca_coll_future_component.future_output, "In Future up_count %d low_count %d count %d num_seg %d\n", up_seg_count, low_seg_count, count, num_segments));
 
     ompi_communicator_t *sm_comm;
     ompi_communicator_t *leader_comm;
