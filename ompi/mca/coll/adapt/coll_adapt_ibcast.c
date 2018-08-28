@@ -30,7 +30,7 @@ static mca_coll_adapt_algorithm_index_t mca_coll_adapt_ibcast_algorithm_index[] 
 int mca_coll_adapt_ibcast_init(void){
     mca_base_component_t *c = &mca_coll_adapt_component.super.collm_version;
     
-    mca_base_component_var_register(c, "bcast_algorithm",
+    mca_base_component_var_register(c, "ibcast_algorithm",
                                     "Algorithm of broadcast",
                                     MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                     OPAL_INFO_LVL_5,
