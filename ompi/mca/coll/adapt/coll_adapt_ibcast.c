@@ -196,7 +196,15 @@ int mca_coll_adapt_ibcast_tuned(void *buff, int count, struct ompi_datatype_t *d
 
 int mca_coll_adapt_ibcast_binomial(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module, int ibcast_tag){
     OPAL_OUTPUT_VERBOSE((10, mca_coll_adapt_component.adapt_output, "binomial\n"));
-    return OMPI_SUCCESS;
+    mca_coll_base_comm_t *coll_comm = module->base_data;
+    if( !( (coll_comm->cached_bmtree) && (coll_comm->cached_bmtree_root == root) ) ) {
+        if( coll_comm->cached_bmtree ) { /* destroy previous binomial if defined */
+            ompi_coll_base_topo_destroy_tree( &(coll_comm->cached_bmtree) );
+        }
+        coll_comm->cached_bmtree = ompi_coll_base_topo_build_bmtree(comm, root);
+        coll_comm->cached_bmtree_root = root;
+    }
+    return mca_coll_adapt_ibcast_generic(buff, count, datatype, root, comm, request, module, coll_comm->cached_bmtree, ibcast_tag);
 }
 
 int mca_coll_adapt_ibcast_in_order_binomial(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module, int ibcast_tag){
@@ -213,8 +221,17 @@ int mca_coll_adapt_ibcast_in_order_binomial(void *buff, int count, struct ompi_d
 }
 
 int mca_coll_adapt_ibcast_binary(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module, int ibcast_tag){
-    OPAL_OUTPUT_VERBOSE((10, mca_coll_adapt_component.adapt_output, "binary\n"));
-    return OMPI_SUCCESS;
+    mca_coll_base_comm_t *coll_comm = module->base_data;
+    if( !( (coll_comm->cached_bintree) && (coll_comm->cached_bintree_root == root) ) ) {
+        if( coll_comm->cached_bintree ) { /* destroy previous binary if defined */
+            ompi_coll_base_topo_destroy_tree( &(coll_comm->cached_bintree) );
+        }
+        coll_comm->cached_bintree = ompi_coll_base_topo_build_tree(2, comm, root);
+        coll_comm->cached_bintree_root = root;
+    }
+    int rank = ompi_comm_rank(comm);
+    print_tree(coll_comm->cached_bintree, rank);
+    return mca_coll_adapt_ibcast_generic(buff, count, datatype, root, comm, request, module, coll_comm->cached_bintree, ibcast_tag);
 }
 
 int mca_coll_adapt_ibcast_pipeline(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module, int ibcast_tag){

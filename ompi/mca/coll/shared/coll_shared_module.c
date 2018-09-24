@@ -276,7 +276,7 @@ int ompi_coll_shared_lazy_enable(mca_coll_base_module_t *module,
     
     //Reduce
     //create a shared memory to store data on every node
-    int max_seg_size = 2500000;
+    int max_seg_size = 5000000;
     ompi_win_allocate_shared(max_seg_size*sizeof(char), sizeof(char), (opal_info_t *)(&ompi_mpi_info_null), shared_module->node_comm, &shared_module->sm_data_ptr, &shared_module->sm_data_win);
     size_t data_size[shared_module->sm_size];
     int data_disp[shared_module->sm_size];
