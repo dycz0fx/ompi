@@ -364,7 +364,7 @@ mca_coll_future_bcast_intra_adapt(void *buff,
         const int *origin_priority = NULL;
         int tmp_origin = 0;
         //const int *tmp = NULL;
-        mca_base_var_find_by_name("coll_sm_priority", &var_id);
+        mca_base_var_find_by_name("coll_shared_priority", &var_id);
         mca_base_var_get_value(var_id, &origin_priority, NULL, NULL);
         tmp_origin = *origin_priority;
         OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] sm_priority origin %d %d\n", w_rank, *origin_priority, tmp_origin));
