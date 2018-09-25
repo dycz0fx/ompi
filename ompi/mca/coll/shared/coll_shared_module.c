@@ -78,6 +78,12 @@ static int mca_coll_shared_module_disable(mca_coll_base_module_t *module,
 static void mca_coll_shared_module_construct(mca_coll_shared_module_t *module)
 {
     module->enabled = false;
+    module->sm_data_ptr = NULL;
+    module->sm_data_win = NULL;
+    //module->data_buf = NULL;
+    module->sm_ctrl_ptr = NULL;
+    module->sm_ctrl_win = NULL;
+    //module->ctrl_buf = NULL;
     module->super.coll_module_disable = mca_coll_shared_module_disable;
 }
 
@@ -86,7 +92,7 @@ static void mca_coll_shared_module_construct(mca_coll_shared_module_t *module)
  */
 static void mca_coll_shared_module_destruct(mca_coll_shared_module_t *module)
 {
-    module->enabled = false;
+    return;
 }
 
 /*
@@ -94,24 +100,25 @@ static void mca_coll_shared_module_destruct(mca_coll_shared_module_t *module)
  */
 static int mca_coll_shared_module_disable(mca_coll_base_module_t *module, struct ompi_communicator_t *comm)
 {
+    mca_coll_shared_module_t *m = (mca_coll_shared_module_t *)module;
+    m->enabled = false;
+    /* windows will be free at ompi_mpi_finalize.c:324 */
     /*
-    mca_coll_shared_module_t *shared_module = (mca_coll_shared_module_t*) module;
-    if (shared_module->root_win != NULL) {
-        ompi_win_free(shared_module->root_win);
+    if (m->sm_data_win != NULL) {
+        ompi_win_free(m->sm_data_win);
     }
-    if (shared_module->sm_rank == 0 && shared_module->leader_win != NULL) {
-        ompi_win_free(shared_module->leader_win);
-    }
-    if (shared_module->sm_win != NULL) {
-        ompi_win_free(shared_module->sm_win);
-    }
-    if (shared_module->leader_comm != NULL) {
-        ompi_comm_free(&(shared_module->leader_comm));
-    }
-    if (shared_module->node_comm != NULL) {
-        ompi_comm_free(&(shared_module->node_comm));
+    if (m->sm_ctrl_win != NULL) {
+        ompi_win_free(m->sm_ctrl_win);
     }
      */
+    /*
+    if (m->data_buf != NULL) {
+        free(m->data_buf);
+    }
+    if (m->ctrl_buf != NULL) {
+        free(m->ctrl_buf);
+    }
+    */
     return OMPI_SUCCESS;
 }
 
@@ -153,8 +160,9 @@ mca_coll_shared_comm_query(struct ompi_communicator_t *comm, int *priority)
     mca_coll_shared_module_t *shared_module;
 
     /* If we're intercomm, or if there's only one process in the
-       communicator */
-    if (OMPI_COMM_IS_INTER(comm) || 1 == ompi_comm_size(comm)) {
+     communicator, or if not all the processes in the communicator
+     are not on this node, then we don't want to run */
+    if (OMPI_COMM_IS_INTER(comm) || 1 == ompi_comm_size(comm) || ompi_group_have_remote_peers (comm->c_local_group)) {
         opal_output_verbose(10, ompi_coll_base_framework.framework_output,
                             "coll:shared:comm_query (%d/%s): intercomm, comm is too small, or not all peers local; disqualifying myself", comm->c_contextid, comm->c_name);
 	return NULL;
@@ -179,7 +187,7 @@ mca_coll_shared_comm_query(struct ompi_communicator_t *comm, int *priority)
     shared_module->super.ft_event        = NULL;
     shared_module->super.coll_allgather  = NULL;
     shared_module->super.coll_allgatherv = NULL;
-    shared_module->super.coll_allreduce  = NULL; //mca_coll_shared_allreduce_intra; //mca_coll_shared_allreduce_intra
+    shared_module->super.coll_allreduce  = mca_coll_shared_allreduce_intra; //mca_coll_shared_allreduce_intra
     shared_module->super.coll_alltoall   = NULL;
     shared_module->super.coll_alltoallv  = NULL;
     shared_module->super.coll_alltoallw  = NULL;
@@ -188,7 +196,7 @@ mca_coll_shared_comm_query(struct ompi_communicator_t *comm, int *priority)
     shared_module->super.coll_exscan     = NULL;
     shared_module->super.coll_gather     = NULL;
     shared_module->super.coll_gatherv    = NULL;
-    shared_module->super.coll_reduce     = NULL; //mca_coll_shared_reduce_intra; //mca_coll_shared_reduce_intra;
+    shared_module->super.coll_reduce     = mca_coll_shared_reduce_intra; //mca_coll_shared_reduce_intra; //mca_coll_shared_reduce_intra;
     shared_module->super.coll_reduce_scatter = NULL;
     shared_module->super.coll_scan       = NULL;
     shared_module->super.coll_scatter    = NULL;
@@ -214,17 +222,13 @@ int ompi_coll_shared_lazy_enable(mca_coll_base_module_t *module,
                                  struct ompi_communicator_t *comm)
 {
     //printf("shared_module_lazy_enable start\n");
-    int p = mca_coll_shared_component.shared_priority;
-    mca_coll_shared_component.shared_priority = 0;
-    comm->c_coll->coll_allreduce = ompi_coll_base_allreduce_intra_recursivedoubling;
+    int i;
+    //comm->c_coll->coll_allreduce = ompi_coll_base_allreduce_intra_recursivedoubling;
     mca_coll_shared_module_t *shared_module = (mca_coll_shared_module_t*) module;
+ 
     
-    int w_rank;
-    w_rank = ompi_comm_rank(comm);
-
-    /* use tuned module during lazy enable */
     int var_id;
-    int tmp_priority = 60;
+    int tmp_priority = 100;
     const int *origin_priority = NULL;
     int tmp_origin = 0;
     //const int *tmp = NULL;
@@ -233,72 +237,34 @@ int ompi_coll_shared_lazy_enable(mca_coll_base_module_t *module,
     tmp_origin = *origin_priority;
     mca_base_var_set_flag(var_id, MCA_BASE_VAR_FLAG_SETTABLE, true);
     mca_base_var_set_value(var_id, &tmp_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
-
-    //Barrier
-    ompi_comm_split_type(comm, MPI_COMM_TYPE_SHARED, 0, (opal_info_t *)(&ompi_mpi_info_null), &(shared_module->node_comm));
-    shared_module->sm_size = ompi_comm_size(shared_module->node_comm);
-    shared_module->sm_rank = ompi_comm_rank(shared_module->node_comm);
     
-    ompi_comm_split(comm, shared_module->sm_rank, w_rank, &(shared_module->leader_comm), false);
-    shared_module->num_node = ompi_comm_size(shared_module->leader_comm);
+    int size = ompi_comm_size(comm);
     
-    //create a shared memory on every node [local_sync][local_sync][local_count][remote_count]
-    if (shared_module->sm_rank == 0) {
-        ompi_win_allocate_shared(4*sizeof(int), sizeof(int), (opal_info_t *)(&ompi_mpi_info_null), shared_module->node_comm, &(shared_module->sm_ptr), &(shared_module->sm_win));
-    }
-    else{
-        ompi_win_allocate_shared(0, sizeof(int), (opal_info_t *)(&ompi_mpi_info_null), shared_module->node_comm, &(shared_module->sm_ptr), &(shared_module->sm_win));
-    }
-    int i;
-    if (shared_module->sm_rank == 0) {
-        for (i=0; i<4; i++) {
-            shared_module->sm_ptr[i] = 0;
-        }
-    }
-    size_t b_size;
-    int b_disp;
-    //get shared memory
-    shared_module->sm_win->w_osc_module->osc_win_shared_query(shared_module->sm_win, 0, &b_size, &b_disp, &(shared_module->barrier_buf));
-    
-    //create a shared memory on root to use as remote
-    if (w_rank == 0) {
-        ompi_win_create(shared_module->barrier_buf+3, 1*sizeof(int), sizeof(int), comm, (opal_info_t *)(&ompi_mpi_info_null), &(shared_module->root_win));
-    }
-    else{
-        ompi_win_create(shared_module->barrier_buf+3, 0, sizeof(int), comm, (opal_info_t *)(&ompi_mpi_info_null), &(shared_module->root_win));
-    }
-    shared_module->root_win->w_osc_module->osc_fence(0, shared_module->root_win);
-    
-    if (shared_module->sm_rank == 0) {
-        ompi_win_create(shared_module->barrier_buf, 2*sizeof(int), sizeof(int), shared_module->leader_comm, (opal_info_t *)(&ompi_mpi_info_null), &(shared_module->leader_win));
-        shared_module->leader_win->w_osc_module->osc_fence(0, shared_module->leader_win);
-    }
-    
-    //Reduce
-    //create a shared memory to store data on every node
-    int max_seg_size = 5000000;
-    ompi_win_allocate_shared(max_seg_size*sizeof(char), sizeof(char), (opal_info_t *)(&ompi_mpi_info_null), shared_module->node_comm, &shared_module->sm_data_ptr, &shared_module->sm_data_win);
-    size_t data_size[shared_module->sm_size];
-    int data_disp[shared_module->sm_size];
-    shared_module->data_buf = malloc(sizeof(char *) * shared_module->sm_size);
-    //get shared memory
-    for (i=0; i<shared_module->sm_size; i++) {
+    /* create a shared memory to store data for every process */
+    int max_seg_size = MAX_SEG_SIZE;
+    ompi_win_allocate_shared(max_seg_size*sizeof(char), sizeof(char), (opal_info_t *)(&ompi_mpi_info_null), comm, &shared_module->sm_data_ptr, &shared_module->sm_data_win);
+    size_t data_size[size];
+    int data_disp[size];
+    //shared_module->data_buf = (char **)malloc(sizeof(char *) * size);
+    /* get data shared memory */
+    for (i=0; i<size; i++) {
         shared_module->sm_data_win->w_osc_module->osc_win_shared_query(shared_module->sm_data_win, i, &(data_size[i]), &(data_disp[i]), &(shared_module->data_buf[i]));
     }
-    //create a shared memory to store control message on every node
-    ompi_win_allocate_shared(1*sizeof(int), sizeof(int), (opal_info_t *)(&ompi_mpi_info_null), shared_module->node_comm, &shared_module->sm_ctrl_ptr, &shared_module->sm_ctrl_win);
-    size_t ctrl_size[shared_module->sm_size];
-    int ctrl_disp[shared_module->sm_size];
-    shared_module->ctrl_buf = malloc(sizeof(int *) * shared_module->sm_size);
-    //get shared memory
-    for (i=0; i<shared_module->sm_size; i++) {
+    /* create a shared memory to store control message on every node */
+    ompi_win_allocate_shared(1*sizeof(int), sizeof(int), (opal_info_t *)(&ompi_mpi_info_null), comm, &shared_module->sm_ctrl_ptr, &shared_module->sm_ctrl_win);
+    size_t ctrl_size[size];
+    int ctrl_disp[size];
+    //shared_module->ctrl_buf = (int **)malloc(sizeof(int *) * size);
+    /* get ctrl shared memory */
+    for (i=0; i<size; i++) {
         shared_module->sm_ctrl_win->w_osc_module->osc_win_shared_query(shared_module->sm_ctrl_win, i, &(ctrl_size[i]), &(ctrl_disp[i]), &(shared_module->ctrl_buf[i]));
     }
 
     shared_module->enabled = true;
-    mca_coll_shared_component.shared_priority = p;
-    comm->c_coll->coll_allreduce = mca_coll_shared_allreduce_intra;
+    //comm->c_coll->coll_allreduce = mca_coll_shared_allreduce_intra;
+    
     mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
+     
     //printf("shared_module_lazy_enable end\n");
     return OMPI_SUCCESS;
 }

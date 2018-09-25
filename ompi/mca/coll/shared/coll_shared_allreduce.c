@@ -33,34 +33,36 @@ int mca_coll_shared_allreduce_shared_ring(const void *sbuf, void *rbuf,
     }
 
     //printf("In shared allreduce\n");
+    int rank = ompi_comm_rank(comm);
+    int size = ompi_comm_size(comm);
     int i;
     ptrdiff_t extent, lower_bound;
     ompi_datatype_get_extent(dtype, &lower_bound, &extent);
     int seg_size, l_seg_size;
-    seg_size = count / shared_module->sm_size;
+    seg_size = count / size;
     l_seg_size = seg_size;
-    if (shared_module->sm_rank == shared_module->sm_size - 1) {
-        seg_size = count - shared_module->sm_rank*l_seg_size;
+    if (rank == size - 1) {
+        seg_size = count - rank*l_seg_size;
     }
-    shared_module->ctrl_buf[shared_module->sm_rank][0] = shared_module->sm_rank;
+    shared_module->ctrl_buf[rank][0] = rank;
     shared_module->sm_ctrl_win->w_osc_module->osc_fence(0, shared_module->sm_ctrl_win);
-    int cur = shared_module->sm_rank;
-    for (i=0; i<shared_module->sm_size; i++) {
-        if (cur != shared_module->sm_size-1) {
+    int cur = rank;
+    for (i=0; i<size; i++) {
+        if (cur != size-1) {
             seg_size = l_seg_size;
         }
         else {
             seg_size = count - cur*l_seg_size;
         }
-        while (shared_module->sm_rank != shared_module->ctrl_buf[cur][0]) {;}
-        if (cur == shared_module->sm_rank) {
+        while (rank != shared_module->ctrl_buf[cur][0]) {;}
+        if (cur == rank) {
             //memcpy(sbuf+cur*l_seg_size, data_buf[cur], seg_size*sizeof(int));
             //for (j=0; j<seg_size; j++) {
             //    shared_module->data_buf[cur][j] = ((char *)sbuf+cur*l_seg_size*extent)[j];
             //}
             memcpy(shared_module->data_buf[cur], (char *)sbuf+cur*l_seg_size*extent, seg_size*extent);
             shared_module->sm_data_win->w_osc_module->osc_fence(0, shared_module->sm_data_win);
-            //printf("[%d cur %d rank %d]: After First Copy (%d %d)\n", i, cur, shared_module->sm_rank, shared_module->data_buf[cur][0], shared_module->data_buf[cur][1]);
+            //printf("[%d cur %d rank %d]: After First Copy (%d %d)\n", i, cur, rank, shared_module->data_buf[cur][0], shared_module->data_buf[cur][1]);
         }
         else{
             //printf("[%d cur %d rank %d]: Before Op (%d %d)\n", i, cur, sm_rank, data_buf[cur][0], data_buf[cur][1]);
@@ -69,16 +71,16 @@ int mca_coll_shared_allreduce_shared_ring(const void *sbuf, void *rbuf,
             //}
             ompi_op_reduce(op, (char *)sbuf+cur*l_seg_size*extent, shared_module->data_buf[cur], seg_size, dtype);
             shared_module->sm_data_win->w_osc_module->osc_fence(0, shared_module->sm_data_win);
-            //printf("[%d cur %d rank %d]: Op (%d %d)\n", i, cur, shared_module->sm_rank, shared_module->data_buf[cur][0], shared_module->data_buf[cur][1]);
+            //printf("[%d cur %d rank %d]: Op (%d %d)\n", i, cur, rank, shared_module->data_buf[cur][0], shared_module->data_buf[cur][1]);
         }
-        cur = (cur-1+shared_module->sm_size)%shared_module->sm_size;
-        shared_module->ctrl_buf[cur][0] = (shared_module->ctrl_buf[cur][0]+1)%shared_module->sm_size;
+        cur = (cur-1+size)%size;
+        shared_module->ctrl_buf[cur][0] = (shared_module->ctrl_buf[cur][0]+1)%size;
         shared_module->sm_ctrl_win->w_osc_module->osc_fence(0, shared_module->sm_ctrl_win);
     }
     char *c;
     c = rbuf;
-    for (i=0; i<shared_module->sm_size; i++) {
-        if (i != shared_module->sm_size-1) {
+    for (i=0; i<size; i++) {
+        if (i != size-1) {
             seg_size = l_seg_size;
         }
         else {
@@ -87,6 +89,7 @@ int mca_coll_shared_allreduce_shared_ring(const void *sbuf, void *rbuf,
         memcpy((char*)c, shared_module->data_buf[i], seg_size*extent);
         c = c+seg_size*extent;
     }
+    shared_module->sm_data_win->w_osc_module->osc_fence(0, shared_module->sm_data_win);
     return OMPI_SUCCESS;
 }
 

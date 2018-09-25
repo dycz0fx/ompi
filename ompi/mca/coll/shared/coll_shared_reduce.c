@@ -7,6 +7,7 @@ int mca_coll_shared_reduce_intra(const void *sbuf, void* rbuf, int count,
                                  struct ompi_communicator_t *comm,
                                  mca_coll_base_module_t *module){
     ptrdiff_t extent, lower_bound;
+    /*
     ompi_datatype_get_extent(dtype, &lower_bound, &extent);
     if (count*extent <= 256) {
         mca_coll_shared_reduce_binomial(sbuf, rbuf, count, dtype, op, root, comm, module);
@@ -18,6 +19,10 @@ int mca_coll_shared_reduce_intra(const void *sbuf, void* rbuf, int count,
     else{
         mca_coll_shared_reduce_shared_ring(sbuf, rbuf, count, dtype, op, root, comm, module);
     }
+     */
+    mca_coll_shared_reduce_shared_ring(sbuf, rbuf, count, dtype, op, root, comm, module);
+    //mca_coll_shared_reduce_binomial(sbuf, rbuf, count, dtype, op, root, comm, module);
+
     return OMPI_SUCCESS;
 
 }
@@ -34,54 +39,55 @@ int mca_coll_shared_reduce_shared_ring(const void *sbuf, void* rbuf, int count,
     }
 
     //printf("In shared reduce\n");
+    int size = ompi_comm_size(comm);
+    int rank = ompi_comm_rank(comm);
     int i;
     ptrdiff_t extent, lower_bound;
     ompi_datatype_get_extent(dtype, &lower_bound, &extent);
     int seg_size, l_seg_size;
-    seg_size = count / shared_module->sm_size;
+    seg_size = count / size;
     l_seg_size = seg_size;
-    if (shared_module->sm_rank == shared_module->sm_size - 1) {
-        seg_size = count - shared_module->sm_rank*l_seg_size;
+    if (rank == size - 1) {
+        seg_size = count - rank*l_seg_size;
     }
-    shared_module->ctrl_buf[shared_module->sm_rank][0] = shared_module->sm_rank;
+    shared_module->ctrl_buf[rank][0] = rank;
     shared_module->sm_ctrl_win->w_osc_module->osc_fence(0, shared_module->sm_ctrl_win);
-    int cur = shared_module->sm_rank;
-    for (i=0; i<shared_module->sm_size; i++) {
-        if (cur != shared_module->sm_size-1) {
+    int cur = rank;
+    for (i=0; i<size; i++) {
+        if (cur != size-1) {
             seg_size = l_seg_size;
         }
         else {
             seg_size = count - cur*l_seg_size;
         }
-        while (shared_module->sm_rank != shared_module->ctrl_buf[cur][0]) {;}
-        if (cur == shared_module->sm_rank) {
+        while (rank != shared_module->ctrl_buf[cur][0]) {opal_progress();}
+        if (cur == rank) {
             //memcpy(sbuf+cur*l_seg_size, data_buf[cur], seg_size*sizeof(int));
             //for (j=0; j<seg_size; j++) {
             //    shared_module->data_buf[cur][j] = ((char *)sbuf+cur*l_seg_size*extent)[j];
             //}
             memcpy(shared_module->data_buf[cur], (char *)sbuf+cur*l_seg_size*extent, seg_size*extent);
             shared_module->sm_data_win->w_osc_module->osc_fence(0, shared_module->sm_data_win);
-            //printf("[%d cur %d rank %d]: After First Copy (%d %d)\n", i, cur, shared_module->sm_rank, shared_module->data_buf[cur][0], shared_module->data_buf[cur][1]);
+            //printf("[%d cur %d rank %d]: After First Copy (%d %d)\n", i, cur, rank, shared_module->data_buf[cur][0], shared_module->data_buf[cur][1]);
         }
         else{
-            //printf("[%d cur %d rank %d]: Before Op (%d %d)\n", i, cur, sm_rank, data_buf[cur][0], data_buf[cur][1]);
+            //printf("[%d cur %d rank %d]: Before Op (%d %d)\n", i, cur, rank, data_buf[cur][0], data_buf[cur][1]);
             //for (j=0; j<seg_size; j++) {
             //    shared_module->data_buf[cur][j] = shared_module->data_buf[cur][j] + ((char *)sbuf+cur*l_seg_size*extent)[j];
             //}
             ompi_op_reduce(op, (char *)sbuf+cur*l_seg_size*extent, shared_module->data_buf[cur], seg_size, dtype);
             shared_module->sm_data_win->w_osc_module->osc_fence(0, shared_module->sm_data_win);
-            //printf("[%d cur %d rank %d]: Op (%d %d)\n", i, cur, shared_module->sm_rank, shared_module->data_buf[cur][0], shared_module->data_buf[cur][1]);
+            //printf("[%d cur %d rank %d]: Op (%d %d)\n", i, cur, rank, shared_module->data_buf[cur][0], shared_module->data_buf[cur][1]);
         }
-        cur = (cur-1+shared_module->sm_size)%shared_module->sm_size;
-        shared_module->ctrl_buf[cur][0] = (shared_module->ctrl_buf[cur][0]+1)%shared_module->sm_size;
+        cur = (cur-1+size)%size;
+        shared_module->ctrl_buf[cur][0] = (shared_module->ctrl_buf[cur][0]+1)%size;
         shared_module->sm_ctrl_win->w_osc_module->osc_fence(0, shared_module->sm_ctrl_win);
     }
-    int w_rank = ompi_comm_rank(comm);
-    if (w_rank == root) {
+    if (rank == root) {
         char *c;
         c = rbuf;
-        for (i=0; i<shared_module->sm_size; i++) {
-            if (i != shared_module->sm_size-1) {
+        for (i=0; i<size; i++) {
+            if (i != size-1) {
                 seg_size = l_seg_size;
             }
             else {
@@ -91,7 +97,8 @@ int mca_coll_shared_reduce_shared_ring(const void *sbuf, void* rbuf, int count,
             c = c+seg_size*extent;
         }
     }
-    
+    shared_module->sm_data_win->w_osc_module->osc_fence(0, shared_module->sm_data_win);
+
     return OMPI_SUCCESS;
 }
 
@@ -112,8 +119,9 @@ int mca_coll_shared_reduce_linear(const void *sbuf, void* rbuf, int count,
     else{
         tree = ompi_coll_base_topo_build_chain(1, comm, root);
     }
-    return mca_coll_shared_reduce_generic(sbuf, rbuf, count, dtype, op, root, comm, module, tree, seg_count, max_outstanding_reqs);
-    //TODO: free tree
+    mca_coll_shared_reduce_generic(sbuf, rbuf, count, dtype, op, root, comm, module, tree, seg_count, max_outstanding_reqs);
+    ompi_coll_base_topo_destroy_tree(&tree);
+    return OMPI_SUCCESS;
 }
 
 int mca_coll_shared_reduce_binomial(const void *sbuf, void* rbuf, int count,
@@ -125,8 +133,9 @@ int mca_coll_shared_reduce_binomial(const void *sbuf, void* rbuf, int count,
     size_t seg_count = 2048;
     int max_outstanding_reqs = 0;
     ompi_coll_tree_t* tree = ompi_coll_base_topo_build_bmtree(comm, root);
-    return mca_coll_shared_reduce_generic(sbuf, rbuf, count, dtype, op, root, comm, module, tree, seg_count, max_outstanding_reqs);
-
+    mca_coll_shared_reduce_generic(sbuf, rbuf, count, dtype, op, root, comm, module, tree, seg_count, max_outstanding_reqs);
+    ompi_coll_base_topo_destroy_tree(&tree);
+    return OMPI_SUCCESS;
 }
 
 int mca_coll_shared_reduce_generic( const void* sendbuf, void* recvbuf, int original_count,
