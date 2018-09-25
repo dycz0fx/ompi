@@ -40,7 +40,7 @@
 #include "ompi/mca/coll/base/coll_tags.h"
 
 #define MAX_SEG_SIZE 5000000 
-#define MAX_SM_SIZE 70
+//#define MAX_SM_SIZE 70
 BEGIN_C_DECLS
 
     /**
@@ -68,10 +68,10 @@ BEGIN_C_DECLS
         /* Bcast and Reduce */
         char *sm_data_ptr;   //local shared memory data buf
         MPI_Win sm_data_win;
-        char *data_buf[MAX_SM_SIZE];     //address array of global shared memory
+        char **data_buf;     //address array of global shared memory
         int *sm_ctrl_ptr;
         MPI_Win sm_ctrl_win;
-        int *ctrl_buf[MAX_SM_SIZE];
+        int **ctrl_buf;
 
     } mca_coll_shared_module_t;
     OBJ_CLASS_DECLARATION(mca_coll_shared_module_t);
