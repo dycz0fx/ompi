@@ -111,14 +111,16 @@ static int mca_coll_shared_module_disable(mca_coll_base_module_t *module, struct
         ompi_win_free(m->sm_ctrl_win);
     }
      */
-    /*
+    
     if (m->data_buf != NULL) {
         free(m->data_buf);
+        m->data_buf = NULL;
     }
     if (m->ctrl_buf != NULL) {
         free(m->ctrl_buf);
+        m->ctrl_buf = NULL;
     }
-    */
+    
     return OMPI_SUCCESS;
 }
 
@@ -245,7 +247,7 @@ int ompi_coll_shared_lazy_enable(mca_coll_base_module_t *module,
     ompi_win_allocate_shared(max_seg_size*sizeof(char), sizeof(char), (opal_info_t *)(&ompi_mpi_info_null), comm, &shared_module->sm_data_ptr, &shared_module->sm_data_win);
     size_t data_size[size];
     int data_disp[size];
-    //shared_module->data_buf = (char **)malloc(sizeof(char *) * size);
+    shared_module->data_buf = (char **)malloc(sizeof(char *) * size);
     /* get data shared memory */
     for (i=0; i<size; i++) {
         shared_module->sm_data_win->w_osc_module->osc_win_shared_query(shared_module->sm_data_win, i, &(data_size[i]), &(data_disp[i]), &(shared_module->data_buf[i]));
@@ -254,7 +256,7 @@ int ompi_coll_shared_lazy_enable(mca_coll_base_module_t *module,
     ompi_win_allocate_shared(1*sizeof(int), sizeof(int), (opal_info_t *)(&ompi_mpi_info_null), comm, &shared_module->sm_ctrl_ptr, &shared_module->sm_ctrl_win);
     size_t ctrl_size[size];
     int ctrl_disp[size];
-    //shared_module->ctrl_buf = (int **)malloc(sizeof(int *) * size);
+    shared_module->ctrl_buf = (int **)malloc(sizeof(int *) * size);
     /* get ctrl shared memory */
     for (i=0; i<size; i++) {
         shared_module->sm_ctrl_win->w_osc_module->osc_win_shared_query(shared_module->sm_ctrl_win, i, &(ctrl_size[i]), &(ctrl_disp[i]), &(shared_module->ctrl_buf[i]));
