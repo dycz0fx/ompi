@@ -39,6 +39,8 @@
 #include "ompi/mca/pml/pml.h"
 #include "ompi/mca/coll/base/coll_tags.h"
 
+#define MAX_SEG_SIZE 5000000 
+#define MAX_SM_SIZE 70
 BEGIN_C_DECLS
 
     /**
@@ -62,25 +64,14 @@ BEGIN_C_DECLS
 
         /* Whether this module has been lazily initialized or not yet */
         bool enabled;
-        /* Barrier */
-        int sm_rank;
-        int sm_size;
-        int num_node;
-        ompi_communicator_t *node_comm;
-        ompi_communicator_t *leader_comm;
-        int *sm_ptr;
-        ompi_win_t *sm_win;
-        int *barrier_buf;
-        ompi_win_t *root_win;
-        ompi_win_t *leader_win;
 
-        /* Reduce */
-        int *sm_data_ptr;
+        /* Bcast and Reduce */
+        char *sm_data_ptr;   //local shared memory data buf
         MPI_Win sm_data_win;
-        int **data_buf;
+        char *data_buf[MAX_SM_SIZE];     //address array of global shared memory
         int *sm_ctrl_ptr;
         MPI_Win sm_ctrl_win;
-        int **ctrl_buf;
+        int *ctrl_buf[MAX_SM_SIZE];
 
     } mca_coll_shared_module_t;
     OBJ_CLASS_DECLARATION(mca_coll_shared_module_t);
