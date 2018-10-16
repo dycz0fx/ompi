@@ -190,6 +190,7 @@ struct ompi_communicator_t {
     
     /* Non-blocking collective tag */
     int c_ibcast_tag;
+    int c_ireduce_tag;
 };
 typedef struct ompi_communicator_t ompi_communicator_t;
 

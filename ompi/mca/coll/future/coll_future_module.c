@@ -93,12 +93,15 @@ static void mca_coll_future_module_destruct(mca_coll_future_module_t *module)
     module->enabled = false;
     if (module->cached_sm_comm != NULL) {
         ompi_comm_free(&(module->cached_sm_comm));
+        module->cached_sm_comm = NULL;
     }
     if (module->cached_leader_comm != NULL) {
         ompi_comm_free(&(module->cached_leader_comm));
+        module->cached_leader_comm = NULL;
     }
     if (module->cached_vranks != NULL) {
         free(module->cached_vranks);
+        module->cached_vranks = NULL;
     }
 }
 
@@ -125,12 +128,6 @@ OBJ_CLASS_INSTANCE(mca_coll_future_module_t,
 int mca_coll_future_init_query(bool enable_progress_threads,
                                bool enable_mpi_threads)
 {
-    /* if no session directory was created, then we cannot be used */
-    if (NULL == ompi_process_info.job_session_dir) {
-        return OMPI_ERR_OUT_OF_RESOURCE;
-    }
-    /* Don't do much here because we don't really want to allocate any
-     future memory until this component is selected to be used. */
     opal_output_verbose(10, ompi_coll_base_framework.framework_output,
                         "coll:future:init_query: pick me! pick me!");
     return OMPI_SUCCESS;
@@ -151,7 +148,7 @@ mca_coll_future_comm_query(struct ompi_communicator_t *comm, int *priority)
      communicator */
     if (OMPI_COMM_IS_INTER(comm) || 1 == ompi_comm_size(comm)) {
         opal_output_verbose(10, ompi_coll_base_framework.framework_output,
-                            "coll:future:comm_query (%d/%s): intercomm, comm is too small, or not all peers local; disqualifying myself", comm->c_contextid, comm->c_name);
+                            "coll:future:comm_query (%d/%s): intercomm, comm is too small; disqualifying myself", comm->c_contextid, comm->c_name);
         return NULL;
     }
     
@@ -174,7 +171,7 @@ mca_coll_future_comm_query(struct ompi_communicator_t *comm, int *priority)
     future_module->super.ft_event        = NULL;
     future_module->super.coll_allgather  = NULL;
     future_module->super.coll_allgatherv = NULL;
-    future_module->super.coll_allreduce  = NULL;
+    future_module->super.coll_allreduce  = mca_coll_future_allreduce_intra;
     future_module->super.coll_alltoall   = NULL;
     future_module->super.coll_alltoallv  = NULL;
     future_module->super.coll_alltoallw  = NULL;
@@ -210,3 +207,14 @@ int ompi_coll_future_lazy_enable(mca_coll_base_module_t *module,
 {
     return OMPI_SUCCESS;
 }
+
+int future_request_free(ompi_request_t** request)
+{
+    OPAL_THREAD_LOCK ((*request)->req_lock);
+    (*request)->req_state = OMPI_REQUEST_INVALID;
+    OPAL_THREAD_UNLOCK ((*request)->req_lock);
+    OBJ_RELEASE(*request);
+    *request = MPI_REQUEST_NULL;
+    return OMPI_SUCCESS;
+}
+

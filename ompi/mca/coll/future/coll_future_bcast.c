@@ -76,8 +76,8 @@ mca_coll_future_bcast_intra(void *buff,
     int w_size, w_rank, i;
     w_size = ompi_comm_size(comm);
     w_rank = ompi_comm_rank(comm);
-    int up_seg_count = mca_coll_future_component.future_up_count;
-    int low_seg_count = mca_coll_future_component.future_low_count;
+    int up_seg_count = mca_coll_future_component.future_bcast_up_count;
+    int low_seg_count = mca_coll_future_component.future_bcast_low_count;
     mca_coll_future_reset_seg_count(&up_seg_count, &low_seg_count, &count);
     OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "In Future %d %d %d\n", up_seg_count, low_seg_count, count));
     int max_seg_count = (up_seg_count > low_seg_count) ? up_seg_count : low_seg_count;
@@ -92,7 +92,7 @@ mca_coll_future_bcast_intra(void *buff,
     ompi_communicator_t *leader_comm;
     int *vranks;
     int sm_rank, sm_size;
-    int leader_rank, leader_size;
+    int leader_rank;
     mca_coll_future_module_t *future_module = (mca_coll_future_module_t *)module;
     /* use cached communicators if possible */
     if (future_module->cached_comm == comm && future_module->cached_sm_comm != NULL && future_module->cached_leader_comm != NULL && future_module->cached_vranks != NULL) {
@@ -101,7 +101,6 @@ mca_coll_future_bcast_intra(void *buff,
         vranks = future_module->cached_vranks;
         sm_size = ompi_comm_size(sm_comm);
         sm_rank = ompi_comm_rank(sm_comm);
-        leader_size = ompi_comm_size(leader_comm);
         leader_rank = ompi_comm_rank(leader_comm);
     }
     /* create communicators if there is no cached communicator */
@@ -140,7 +139,6 @@ mca_coll_future_bcast_intra(void *buff,
         mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
         //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
         //printf("[%d] tuned_priority set back %d\n", w_rank, *tmp);
-        leader_size = ompi_comm_size(leader_comm);
         leader_rank = ompi_comm_rank(leader_comm);
 
         vranks = malloc(sizeof(int) * w_size);
@@ -328,15 +326,12 @@ mca_coll_future_bcast_intra_adapt(void *buff,
     int w_size, w_rank, i;
     w_size = ompi_comm_size(comm);
     w_rank = ompi_comm_rank(comm);
-    int up_seg_count = mca_coll_future_component.future_up_count;
-    int low_seg_count = mca_coll_future_component.future_low_count;
+    int up_seg_count = mca_coll_future_component.future_bcast_up_count;
+    int low_seg_count = mca_coll_future_component.future_bcast_low_count;
     mca_coll_future_reset_seg_count(&up_seg_count, &low_seg_count, &count);
     int max_seg_count = (up_seg_count > low_seg_count) ? up_seg_count : low_seg_count;
     int up_num = max_seg_count / up_seg_count;
     int low_num = max_seg_count / low_seg_count;
-    //if (up_num > MAX_TASK_NUM || low_num > MAX_TASK_NUM) {
-    //    return OMPI_ERROR;
-    //}
     int num_segments = (count + max_seg_count - 1) / max_seg_count;
     OPAL_OUTPUT_VERBOSE((20, mca_coll_future_component.future_output, "In Future up_count %d low_count %d count %d num_seg %d\n", up_seg_count, low_seg_count, count, num_segments));
 
@@ -344,7 +339,7 @@ mca_coll_future_bcast_intra_adapt(void *buff,
     ompi_communicator_t *leader_comm;
     int *vranks;
     int sm_rank, sm_size;
-    int leader_rank, leader_size;
+    int leader_rank;
     mca_coll_future_module_t *future_module = (mca_coll_future_module_t *)module;
     /* use cached communicators if possible */
     if (future_module->cached_comm == comm && future_module->cached_sm_comm != NULL && future_module->cached_leader_comm != NULL && future_module->cached_vranks != NULL) {
@@ -353,15 +348,26 @@ mca_coll_future_bcast_intra_adapt(void *buff,
         vranks = future_module->cached_vranks;
         sm_size = ompi_comm_size(sm_comm);
         sm_rank = ompi_comm_rank(sm_comm);
-        leader_size = ompi_comm_size(leader_comm);
         leader_rank = ompi_comm_rank(leader_comm);
     }
     /* create communicators if there is no cached communicator */
     else {
         /* create sm_comm which contain all the process on a node */
+        const int *origin_priority = NULL;
+
+        /* lower future module priority */
+        int future_var_id;
+        int tmp_future_priority = 0;
+        int tmp_future_origin = 0;
+        mca_base_var_find_by_name("coll_future_priority", &future_var_id);
+        mca_base_var_get_value(future_var_id, &origin_priority, NULL, NULL);
+        tmp_future_origin = *origin_priority;
+        mca_base_var_set_flag(future_var_id, MCA_BASE_VAR_FLAG_SETTABLE, true);
+        mca_base_var_set_value(future_var_id, &tmp_future_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
+        comm->c_coll->coll_allreduce = ompi_coll_base_allreduce_intra_recursivedoubling;
+
         int var_id;
         int tmp_priority = 60;
-        const int *origin_priority = NULL;
         int tmp_origin = 0;
         //const int *tmp = NULL;
         mca_base_var_find_by_name("coll_shared_priority", &var_id);
@@ -392,7 +398,6 @@ mca_coll_future_bcast_intra_adapt(void *buff,
         mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
         //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
         //printf("[%d] adapt_priority set back %d\n", w_rank, *tmp);
-        leader_size = ompi_comm_size(leader_comm);
         leader_rank = ompi_comm_rank(leader_comm);
         
         vranks = malloc(sizeof(int) * w_size);
@@ -403,6 +408,10 @@ mca_coll_future_bcast_intra_adapt(void *buff,
         future_module->cached_sm_comm = sm_comm;
         future_module->cached_leader_comm = leader_comm;
         future_module->cached_vranks = vranks;
+        
+        mca_base_var_set_value(future_var_id, &tmp_future_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
+        comm->c_coll->coll_allreduce = mca_coll_future_allreduce_intra;
+
     }
     
     int root_sm_rank;
