@@ -70,24 +70,6 @@ int execute_task(mca_coll_task_t *t){
     return OMPI_SUCCESS;
 }
 
-/* issue the task, non blocking version of execute_task */
-int issue_task(mca_coll_task_t *t){
-    //printf("issue %p\n", (void *)t);
-    t->func_ptr(t->func_argu);
-    return OMPI_SUCCESS;
-}
-
-/* complete the task, complete the corresponding task */
-int complete_task(mca_coll_task_t *t){
-    //printf("complete %p\n", (void *)t);
-    int i;
-    for (i=0; i<t->future_list_size; i++) {
-        trigger_future(t->future_list[i]);
-    }
-    free_task(t);
-    return OMPI_SUCCESS;
-}
-
 /* trigger the future */
 int trigger_future(mca_coll_future_t *f){
     //printf("trigger_future %p\n", (void *)f);
@@ -96,6 +78,39 @@ int trigger_future(mca_coll_future_t *f){
     if (f->count == 0) {
         for (i=0; i<f->task_list_size; i++) {
             execute_task(f->task_list[i]);
+        }
+        free_future(f);
+    }
+    return OMPI_SUCCESS;
+}
+
+
+/* issue the task, non blocking version of execute_task */
+int issue_task(mca_coll_task_t *t){
+    //printf("issue %p\n", (void *)t);
+    t->func_ptr(t->func_argu);
+    return OMPI_SUCCESS;
+}
+
+/* complete the task, trigger the corresponding future */
+int complete_task(mca_coll_task_t *t){
+    //printf("complete %p\n", (void *)t);
+    int i;
+    for (i=0; i<t->future_list_size; i++) {
+        trigger_future_i(t->future_list[i]);
+    }
+    free_task(t);
+    return OMPI_SUCCESS;
+}
+
+/* trigger the future non blocking */
+int trigger_future_i(mca_coll_future_t *f){
+    //printf("trigger_future %p\n", (void *)f);
+    int i;
+    f->count--;
+    if (f->count == 0) {
+        for (i=0; i<f->task_list_size; i++) {
+            issue_task(f->task_list[i]);
         }
         free_future(f);
     }

@@ -86,7 +86,6 @@ mca_coll_future_component_t mca_coll_future_component = {
     /* future-component specifc information */
     
     /* (default) priority */
-    /* JMS temporarily lowered until we can get more testing */
     50,
 };
 
@@ -129,21 +128,38 @@ static int future_register(void)
     cs->future_output = opal_output_open(NULL);
     opal_output_set_verbosity(cs->future_output, coll_future_verbose);
 
-    cs->future_up_count = 65536;
-    (void) mca_base_component_var_register(c, "up_count",
-                                           "up level segment count",
+    cs->future_bcast_up_count = 65536;
+    (void) mca_base_component_var_register(c, "bcast_up_count",
+                                           "up level segment count for bcast",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
-                                           &cs->future_up_count);
+                                           &cs->future_bcast_up_count);
     
-    cs->future_low_count = 524288;
-    (void) mca_base_component_var_register(c, "low_count",
-                                           "low level segment count",
+    cs->future_bcast_low_count = 524288;
+    (void) mca_base_component_var_register(c, "bcast_low_count",
+                                           "low level segment count for bcast",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
-                                           &cs->future_low_count);
+                                           &cs->future_bcast_low_count);
+    
+    cs->future_allreduce_up_count = 65536;
+    (void) mca_base_component_var_register(c, "allreduce_up_count",
+                                           "up level segment count for allreduce",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_allreduce_up_count);
+
+    cs->future_allreduce_low_count = 524288;
+    (void) mca_base_component_var_register(c, "allreduce_low_count",
+                                           "low level segment count for bcast",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_allreduce_low_count);
+
 
     return OMPI_SUCCESS;
 }
