@@ -225,7 +225,6 @@ int ompi_coll_shared_lazy_enable(mca_coll_base_module_t *module,
 {
     //printf("shared_module_lazy_enable start\n");
     int i;
-    //comm->c_coll->coll_allreduce = ompi_coll_base_allreduce_intra_recursivedoubling;
     mca_coll_shared_module_t *shared_module = (mca_coll_shared_module_t*) module;
  
     
@@ -233,12 +232,12 @@ int ompi_coll_shared_lazy_enable(mca_coll_base_module_t *module,
     int tmp_priority = 100;
     const int *origin_priority = NULL;
     int tmp_origin = 0;
-    //const int *tmp = NULL;
     mca_base_var_find_by_name("coll_tuned_priority", &var_id);
     mca_base_var_get_value(var_id, &origin_priority, NULL, NULL);
     tmp_origin = *origin_priority;
     mca_base_var_set_flag(var_id, MCA_BASE_VAR_FLAG_SETTABLE, true);
     mca_base_var_set_value(var_id, &tmp_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
+    comm->c_coll->coll_allreduce = ompi_coll_base_allreduce_intra_recursivedoubling;
     
     int size = ompi_comm_size(comm);
     
@@ -263,10 +262,8 @@ int ompi_coll_shared_lazy_enable(mca_coll_base_module_t *module,
     }
 
     shared_module->enabled = true;
-    //comm->c_coll->coll_allreduce = mca_coll_shared_allreduce_intra;
     
+    comm->c_coll->coll_allreduce = mca_coll_shared_allreduce_intra;
     mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
-     
-    //printf("shared_module_lazy_enable end\n");
     return OMPI_SUCCESS;
 }
