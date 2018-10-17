@@ -7,21 +7,17 @@ int mca_coll_shared_reduce_intra(const void *sbuf, void* rbuf, int count,
                                  struct ompi_communicator_t *comm,
                                  mca_coll_base_module_t *module){
     ptrdiff_t extent, lower_bound;
-    /*
+    
     ompi_datatype_get_extent(dtype, &lower_bound, &extent);
     if (count*extent <= 256) {
         mca_coll_shared_reduce_binomial(sbuf, rbuf, count, dtype, op, root, comm, module);
-
     }
-    else if (count*extent <= 256*1024) {
+    else if (count*extent <= 32*1024) {
         mca_coll_shared_reduce_binomial(sbuf, rbuf, count, dtype, op, root, comm, module);
     }
     else{
         mca_coll_shared_reduce_shared_ring(sbuf, rbuf, count, dtype, op, root, comm, module);
     }
-     */
-    mca_coll_shared_reduce_shared_ring(sbuf, rbuf, count, dtype, op, root, comm, module);
-    //mca_coll_shared_reduce_binomial(sbuf, rbuf, count, dtype, op, root, comm, module);
 
     return OMPI_SUCCESS;
 
