@@ -33,8 +33,8 @@ void mca_coll_future_reset_seg_count(int *up_seg_count, int *low_seg_count, int 
     }
 }
 
-/* get root's sm_rank and leader_rank from vranks array */
-void mca_coll_future_get_ranks(int *vranks, int root, int sm_size, int *root_sm_rank, int *root_leader_rank){
-    *root_leader_rank = vranks[root] / sm_size;
-    *root_sm_rank = vranks[root] % sm_size;
+/* get root's low_rank and up_rank from vranks array */
+void mca_coll_future_get_ranks(int *vranks, int root, int low_size, int *root_low_rank, int *root_up_rank){
+    *root_up_rank = vranks[root] / low_size;
+    *root_low_rank = vranks[root] % low_size;
 }

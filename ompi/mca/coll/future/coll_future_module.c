@@ -80,8 +80,8 @@ static void mca_coll_future_module_construct(mca_coll_future_module_t *module)
     module->enabled = false;
     module->super.coll_module_disable = mca_coll_future_module_disable;
     module->cached_comm = NULL;
-    module->cached_sm_comm = NULL;
-    module->cached_leader_comm = NULL;
+    module->cached_low_comm = NULL;
+    module->cached_up_comm = NULL;
     module->cached_vranks = NULL;
 }
 
@@ -91,13 +91,13 @@ static void mca_coll_future_module_construct(mca_coll_future_module_t *module)
 static void mca_coll_future_module_destruct(mca_coll_future_module_t *module)
 {
     module->enabled = false;
-    if (module->cached_sm_comm != NULL) {
-        ompi_comm_free(&(module->cached_sm_comm));
-        module->cached_sm_comm = NULL;
+    if (module->cached_low_comm != NULL) {
+        ompi_comm_free(&(module->cached_low_comm));
+        module->cached_low_comm = NULL;
     }
-    if (module->cached_leader_comm != NULL) {
-        ompi_comm_free(&(module->cached_leader_comm));
-        module->cached_leader_comm = NULL;
+    if (module->cached_up_comm != NULL) {
+        ompi_comm_free(&(module->cached_up_comm));
+        module->cached_up_comm = NULL;
     }
     if (module->cached_vranks != NULL) {
         free(module->cached_vranks);
@@ -146,9 +146,9 @@ mca_coll_future_comm_query(struct ompi_communicator_t *comm, int *priority)
     
     /* If we're intercomm, or if there's only one process in the
      communicator */
-    if (OMPI_COMM_IS_INTER(comm) || 1 == ompi_comm_size(comm)) {
+    if (OMPI_COMM_IS_INTER(comm) || 1 == ompi_comm_size(comm) || !ompi_group_have_remote_peers (comm->c_local_group)) {
         opal_output_verbose(10, ompi_coll_base_framework.framework_output,
-                            "coll:future:comm_query (%d/%s): intercomm, comm is too small; disqualifying myself", comm->c_contextid, comm->c_name);
+                            "coll:future:comm_query (%d/%s): intercomm, comm is too small, only on one node; disqualifying myself", comm->c_contextid, comm->c_name);
         return NULL;
     }
     
@@ -216,5 +216,79 @@ int future_request_free(ompi_request_t** request)
     OBJ_RELEASE(*request);
     *request = MPI_REQUEST_NULL;
     return OMPI_SUCCESS;
+}
+
+void mca_coll_future_comm_create(struct ompi_communicator_t *comm, mca_coll_future_module_t *future_module){
+    /* use cached communicators if possible */
+    if (future_module->cached_comm == comm && future_module->cached_low_comm != NULL && future_module->cached_up_comm != NULL && future_module->cached_vranks != NULL) {
+        return;
+    }
+    /* create communicators if there is no cached communicator */
+    else {
+        int low_rank, low_size;
+        int up_rank;
+        int w_rank = ompi_comm_rank(comm);
+        int w_size = ompi_comm_size(comm);
+        ompi_communicator_t *low_comm;
+        ompi_communicator_t *up_comm;
+        /* create low_comm which contain all the process on a node */
+        const int *origin_priority = NULL;
+        //const int *tmp = NULL;
+        /* lower future module priority */
+        int future_var_id;
+        int tmp_future_priority = 0;
+        int tmp_future_origin = 0;
+        mca_base_var_find_by_name("coll_future_priority", &future_var_id);
+        mca_base_var_get_value(future_var_id, &origin_priority, NULL, NULL);
+        tmp_future_origin = *origin_priority;
+        mca_base_var_set_flag(future_var_id, MCA_BASE_VAR_FLAG_SETTABLE, true);
+        mca_base_var_set_value(future_var_id, &tmp_future_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
+        comm->c_coll->coll_allreduce = ompi_coll_base_allreduce_intra_recursivedoubling;
+        
+        int var_id;
+        int tmp_priority = 100;
+        int tmp_origin = 0;
+        mca_base_var_find_by_name("coll_shared_priority", &var_id);
+        mca_base_var_get_value(var_id, &origin_priority, NULL, NULL);
+        tmp_origin = *origin_priority;
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] shared_priority origin %d %d\n", w_rank, *origin_priority, tmp_origin));
+        mca_base_var_set_flag(var_id, MCA_BASE_VAR_FLAG_SETTABLE, true);
+        mca_base_var_set_value(var_id, &tmp_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
+        //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
+        //printf("shared_priority after set %d %d\n", *tmp);
+        ompi_comm_split_type(comm, MPI_COMM_TYPE_SHARED, 0, (opal_info_t *)(&ompi_mpi_info_null), &low_comm);
+        mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
+        //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
+        //printf("[%d] shared_priority set back %d\n", w_rank, *tmp);
+        low_size = ompi_comm_size(low_comm);
+        low_rank = ompi_comm_rank(low_comm);
+        
+        /* create up_comm which contain one process per node (across nodes) */
+        mca_base_var_find_by_name("coll_adapt_priority", &var_id);
+        mca_base_var_get_value(var_id, &origin_priority, NULL, NULL);
+        tmp_origin = *origin_priority;
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] adapt_priority origin %d %d\n", w_rank, *origin_priority, tmp_origin));
+        mca_base_var_set_flag(var_id, MCA_BASE_VAR_FLAG_SETTABLE, true);
+        mca_base_var_set_value(var_id, &tmp_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
+        //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
+        //printf("adapt_priority after set %d %d\n", *tmp);
+        ompi_comm_split(comm, low_rank, w_rank, &up_comm, false);
+        mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
+        //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
+        //printf("[%d] adapt_priority set back %d\n", w_rank, *tmp);
+        up_rank = ompi_comm_rank(up_comm);
+        
+        int *vranks = malloc(sizeof(int) * w_size);
+        /* do allgather to gather vrank from each process so every process will know other processes vrank*/
+        int vrank = low_size * up_rank + low_rank;
+        comm->c_coll->coll_allgather(&vrank, 1, MPI_INT, vranks, 1, MPI_INT, comm, comm->c_coll->coll_allgather_module);
+        future_module->cached_comm = comm;
+        future_module->cached_low_comm = low_comm;
+        future_module->cached_up_comm = up_comm;
+        future_module->cached_vranks = vranks;
+        
+        mca_base_var_set_value(future_var_id, &tmp_future_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
+        comm->c_coll->coll_allreduce = mca_coll_future_allreduce_intra;
+    }
 }
 

@@ -13,17 +13,17 @@ void mac_coll_future_set_bcast_argu(mca_bcast_argu_t *argu, void *buff, int coun
     argu->noop = noop;
 }
 
-void mac_coll_future_set_nextbcast_argu(mca_bcast_next_argu_t *argu, void *buff, int up_seg_count, int low_seg_count, struct ompi_datatype_t *dtype, int root_sm_rank, int root_leader_rank ,struct ompi_communicator_t *up_comm, struct ompi_communicator_t *low_comm, int num_segments, int sm_rank, int cur_seg, int w_rank, int last_seg_count){
+void mac_coll_future_set_nextbcast_argu(mca_bcast_next_argu_t *argu, void *buff, int up_seg_count, int low_seg_count, struct ompi_datatype_t *dtype, int root_low_rank, int root_up_rank ,struct ompi_communicator_t *up_comm, struct ompi_communicator_t *low_comm, int num_segments, int low_rank, int cur_seg, int w_rank, int last_seg_count){
     argu->buff = buff;
     argu->up_seg_count = up_seg_count;
     argu->low_seg_count = low_seg_count;
     argu->dtype = dtype;
-    argu->root_sm_rank = root_sm_rank;
-    argu->root_leader_rank = root_leader_rank;
+    argu->root_low_rank = root_low_rank;
+    argu->root_up_rank = root_up_rank;
     argu->up_comm = up_comm;
     argu->low_comm = low_comm;
     argu->num_segments = num_segments;
-    argu->sm_rank = sm_rank;
+    argu->low_rank = low_rank;
     argu->cur_seg = cur_seg;
     argu->w_rank = w_rank;
     argu->last_seg_count = last_seg_count;
@@ -39,13 +39,13 @@ void mac_coll_future_set_first_argu(mca_bcast_first_argu_t *argu, void *buff, in
     argu->noop = noop;
 }
 
-void mac_coll_future_set_mid_argu(mca_bcast_mid_argu_t *argu, void *buff, int up_seg_count, int low_seg_count, struct ompi_datatype_t *dtype, int root_sm_rank, int root_leader_rank, struct ompi_communicator_t *up_comm, struct ompi_communicator_t *low_comm, int up_num, int low_num, int num_segments, int cur_seg, int w_rank, int last_seg_count, bool noop){
+void mac_coll_future_set_mid_argu(mca_bcast_mid_argu_t *argu, void *buff, int up_seg_count, int low_seg_count, struct ompi_datatype_t *dtype, int root_low_rank, int root_up_rank, struct ompi_communicator_t *up_comm, struct ompi_communicator_t *low_comm, int up_num, int low_num, int num_segments, int cur_seg, int w_rank, int last_seg_count, bool noop){
     argu->buff = buff;
     argu->up_seg_count = up_seg_count;
     argu->low_seg_count = low_seg_count;
     argu->dtype = dtype;
-    argu->root_sm_rank = root_sm_rank;
-    argu->root_leader_rank = root_leader_rank;
+    argu->root_low_rank = root_low_rank;
+    argu->root_up_rank = root_up_rank;
     argu->up_comm = up_comm;
     argu->low_comm = low_comm;
     argu->up_num = up_num;
@@ -73,8 +73,7 @@ mca_coll_future_bcast_intra(void *buff,
 {
     ptrdiff_t extent, lb;
     ompi_datatype_get_extent(dtype, &lb, &extent);
-    int w_size, w_rank, i;
-    w_size = ompi_comm_size(comm);
+    int w_rank, i;
     w_rank = ompi_comm_rank(comm);
     int up_seg_count = mca_coll_future_component.future_bcast_up_count;
     int low_seg_count = mca_coll_future_component.future_bcast_low_count;
@@ -88,73 +87,19 @@ mca_coll_future_bcast_intra(void *buff,
     }
     int num_segments = (count + max_seg_count - 1) / max_seg_count;
 
-    ompi_communicator_t *sm_comm;
-    ompi_communicator_t *leader_comm;
-    int *vranks;
-    int sm_rank, sm_size;
-    int leader_rank;
+    /* create the subcommunicators */
     mca_coll_future_module_t *future_module = (mca_coll_future_module_t *)module;
-    /* use cached communicators if possible */
-    if (future_module->cached_comm == comm && future_module->cached_sm_comm != NULL && future_module->cached_leader_comm != NULL && future_module->cached_vranks != NULL) {
-        sm_comm = future_module->cached_sm_comm;
-        leader_comm = future_module->cached_leader_comm;
-        vranks = future_module->cached_vranks;
-        sm_size = ompi_comm_size(sm_comm);
-        sm_rank = ompi_comm_rank(sm_comm);
-        leader_rank = ompi_comm_rank(leader_comm);
-    }
-    /* create communicators if there is no cached communicator */
-    else {
-        /* create sm_comm which contain all the process on a node */
-        int var_id;
-        int tmp_priority = 60;
-        const int *origin_priority = NULL;
-        int tmp_origin = 0;
-        //const int *tmp = NULL;
-        mca_base_var_find_by_name("coll_sm_priority", &var_id);
-        mca_base_var_get_value(var_id, &origin_priority, NULL, NULL);
-        tmp_origin = *origin_priority;
-        OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] sm_priority origin %d %d\n", w_rank, *origin_priority, tmp_origin));
-        mca_base_var_set_flag(var_id, MCA_BASE_VAR_FLAG_SETTABLE, true);
-        mca_base_var_set_value(var_id, &tmp_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
-        //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
-        //printf("sm_priority after set %d %d\n", *tmp);
-        ompi_comm_split_type(comm, MPI_COMM_TYPE_SHARED, 0, (opal_info_t *)(&ompi_mpi_info_null), &sm_comm);
-        mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
-        //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
-        //printf("[%d] sm_priority set back %d\n", w_rank, *tmp);
-        sm_size = ompi_comm_size(sm_comm);
-        sm_rank = ompi_comm_rank(sm_comm);
-
-        /* create leader_comm which contain one process per node (across nodes) */
-        mca_base_var_find_by_name("coll_tuned_priority", &var_id);
-        mca_base_var_get_value(var_id, &origin_priority, NULL, NULL);
-        tmp_origin = *origin_priority;
-        OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] tuned_priority origin %d %d\n", w_rank, *origin_priority, tmp_origin));
-        mca_base_var_set_flag(var_id, MCA_BASE_VAR_FLAG_SETTABLE, true);
-        mca_base_var_set_value(var_id, &tmp_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
-        //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
-        //printf("tuned_priority after set %d %d\n", *tmp);
-        ompi_comm_split(comm, sm_rank, w_rank, &leader_comm, false);
-        mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
-        //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
-        //printf("[%d] tuned_priority set back %d\n", w_rank, *tmp);
-        leader_rank = ompi_comm_rank(leader_comm);
-
-        vranks = malloc(sizeof(int) * w_size);
-        /* do allgather to gather vrank from each process so every process will know other processes vrank*/
-        int vrank = sm_size * leader_rank + sm_rank;
-        comm->c_coll->coll_allgather(&vrank, 1, MPI_INT, vranks, 1, MPI_INT, comm, comm->c_coll->coll_allgather_module);
-        future_module->cached_comm = comm;
-        future_module->cached_sm_comm = sm_comm;
-        future_module->cached_leader_comm = leader_comm;
-        future_module->cached_vranks = vranks;
-    }
+    mca_coll_future_comm_create(comm, future_module);
+    ompi_communicator_t *low_comm = future_module->cached_low_comm;
+    ompi_communicator_t *up_comm = future_module->cached_up_comm;
+    int *vranks = future_module->cached_vranks;
+    int low_rank = ompi_comm_rank(low_comm);
+    int low_size = ompi_comm_size(low_comm);
     
-    int root_sm_rank;
-    int root_leader_rank;
-    mca_coll_future_get_ranks(vranks, root, sm_size, &root_sm_rank, &root_leader_rank);
-    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: root_sm_rank %d root_leader_rank %d\n", w_rank, root_sm_rank, root_leader_rank));
+    int root_low_rank;
+    int root_up_rank;
+    mca_coll_future_get_ranks(vranks, root, low_size, &root_low_rank, &root_up_rank);
+    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: root_low_rank %d root_up_rank %d\n", w_rank, root_low_rank, root_up_rank));
 
     /* create future */
     mca_coll_future_t *f = OBJ_NEW(mca_coll_future_t);
@@ -165,7 +110,7 @@ mca_coll_future_bcast_intra(void *buff,
         up_list[i] = OBJ_NEW(mca_coll_task_t);
         /* setup up task arguments */ //for now, root has to 0//
         mca_bcast_argu_t *up_task_argu = malloc(sizeof(mca_bcast_argu_t));
-        mac_coll_future_set_bcast_argu(up_task_argu, (char *)buff+extent*up_seg_count*i, up_seg_count, dtype, root_leader_rank, leader_comm, sm_rank!=root_sm_rank);
+        mac_coll_future_set_bcast_argu(up_task_argu, (char *)buff+extent*up_seg_count*i, up_seg_count, dtype, root_up_rank, up_comm, low_rank!=root_low_rank);
         /* init the up task */
         init_task(up_list[i], mca_coll_future_bcast, (void *)(up_task_argu));
         /* add the up task into future, up task will trigger the future */
@@ -178,7 +123,7 @@ mca_coll_future_bcast_intra(void *buff,
         mca_coll_task_t *low = OBJ_NEW(mca_coll_task_t);
         /* set up low task arguments */ //for now, root has to 0//
         mca_bcast_argu_t *low_task_argu = malloc(sizeof(mca_bcast_argu_t));
-        mac_coll_future_set_bcast_argu(low_task_argu, (char *)buff+extent*low_seg_count*i, low_seg_count, dtype, root_sm_rank, sm_comm, false);
+        mac_coll_future_set_bcast_argu(low_task_argu, (char *)buff+extent*low_seg_count*i, low_seg_count, dtype, root_low_rank, low_comm, false);
         /* init the low task */
         init_task(low, mca_coll_future_bcast, (void *)(low_task_argu));
         /* add the low task into future, low task will be triggered by the future */
@@ -191,7 +136,7 @@ mca_coll_future_bcast_intra(void *buff,
         mca_coll_task_t *next = OBJ_NEW(mca_coll_task_t);
         /* set up next task arguments */ //for now, root has to 0//
         mca_bcast_next_argu_t *next_task_argu = malloc(sizeof(mca_bcast_next_argu_t));
-        mac_coll_future_set_nextbcast_argu(next_task_argu, (char *)buff+extent*max_seg_count, up_seg_count, low_seg_count, dtype, root_sm_rank, root_leader_rank, leader_comm, sm_comm, num_segments, sm_rank, 1, w_rank, count-(num_segments-1)*max_seg_count);
+        mac_coll_future_set_nextbcast_argu(next_task_argu, (char *)buff+extent*max_seg_count, up_seg_count, low_seg_count, dtype, root_low_rank, root_up_rank, up_comm, low_comm, num_segments, low_rank, 1, w_rank, count-(num_segments-1)*max_seg_count);
         /* init the next task */
         init_task(next, mca_coll_future_nextbcast, (void *)(next_task_argu));
         /* add the nextbcast task into future, nextbcast task will be triggered by the future */
@@ -233,7 +178,7 @@ int mca_coll_future_nextbcast(void *bcast_next_argu){
         mca_coll_task_t *up = OBJ_NEW(mca_coll_task_t);
         /* set up up task arguments */ //for now, root has to 0//
         mca_bcast_argu_t *up_task_argu = malloc(sizeof(mca_bcast_argu_t));
-        mac_coll_future_set_bcast_argu(up_task_argu, argu->buff, argu->last_seg_count, argu->dtype, argu->root_leader_rank, argu->up_comm, argu->sm_rank!=argu->root_sm_rank);
+        mac_coll_future_set_bcast_argu(up_task_argu, argu->buff, argu->last_seg_count, argu->dtype, argu->root_up_rank, argu->up_comm, argu->low_rank!=argu->root_low_rank);
         /* init the up task */
         init_task(up, mca_coll_future_bcast, (void *)(up_task_argu));
         add_butterfly(up, f);
@@ -242,7 +187,7 @@ int mca_coll_future_nextbcast(void *bcast_next_argu){
         mca_coll_task_t *low = OBJ_NEW(mca_coll_task_t);
         /* set up low task arguments */ //for now, root has to 0//
         mca_bcast_argu_t *low_task_argu = malloc(sizeof(mca_bcast_argu_t));
-        mac_coll_future_set_bcast_argu(low_task_argu, argu->buff, argu->last_seg_count, argu->dtype, argu->root_sm_rank, argu->low_comm, false);
+        mac_coll_future_set_bcast_argu(low_task_argu, argu->buff, argu->last_seg_count, argu->dtype, argu->root_low_rank, argu->low_comm, false);
         /* init the low task */
         init_task(low, mca_coll_future_bcast, (void *)(low_task_argu));
         add_tornado(low, f);
@@ -258,7 +203,7 @@ int mca_coll_future_nextbcast(void *bcast_next_argu){
             up_list[i] = OBJ_NEW(mca_coll_task_t);
             /* set up up task arguments */ //for now, root has to 0//
             mca_bcast_argu_t *up_task_argu = malloc(sizeof(mca_bcast_argu_t));
-            mac_coll_future_set_bcast_argu(up_task_argu, (char *)argu->buff+extent*argu->up_seg_count*i, argu->up_seg_count, argu->dtype, argu->root_leader_rank, argu->up_comm, argu->sm_rank!=argu->root_sm_rank);
+            mac_coll_future_set_bcast_argu(up_task_argu, (char *)argu->buff+extent*argu->up_seg_count*i, argu->up_seg_count, argu->dtype, argu->root_up_rank, argu->up_comm, argu->low_rank!=argu->root_low_rank);
             /* init the up task */
             init_task(up_list[i], mca_coll_future_bcast, (void *)(up_task_argu));
             add_butterfly(up_list[i], f);
@@ -270,7 +215,7 @@ int mca_coll_future_nextbcast(void *bcast_next_argu){
             mca_coll_task_t *low = OBJ_NEW(mca_coll_task_t);
             /* set up low task arguments */ //for now, root has to 0//
             mca_bcast_argu_t *low_task_argu = malloc(sizeof(mca_bcast_argu_t));
-            mac_coll_future_set_bcast_argu(low_task_argu, (char *)argu->buff+extent*argu->low_seg_count*i, argu->low_seg_count, argu->dtype, argu->root_sm_rank, argu->low_comm, false);
+            mac_coll_future_set_bcast_argu(low_task_argu, (char *)argu->buff+extent*argu->low_seg_count*i, argu->low_seg_count, argu->dtype, argu->root_low_rank, argu->low_comm, false);
             /* init the low task */
             init_task(low, mca_coll_future_bcast, (void *)(low_task_argu));
             /* add the low task into future, low task will be triggered by the future */
@@ -283,7 +228,7 @@ int mca_coll_future_nextbcast(void *bcast_next_argu){
             mca_coll_task_t *next = OBJ_NEW(mca_coll_task_t);
             /* set up next task arguments */ //for now, root has to 0//
             mca_bcast_next_argu_t *next_task_argu = malloc(sizeof(mca_bcast_next_argu_t));
-            mac_coll_future_set_nextbcast_argu(next_task_argu, (char *)argu->buff+extent*max_seg_count, argu->up_seg_count, argu->low_seg_count, argu->dtype, argu->root_sm_rank, argu->root_leader_rank, argu->up_comm, argu->low_comm, argu->num_segments, argu->sm_rank, argu->cur_seg + 1, argu->w_rank, argu->last_seg_count);
+            mac_coll_future_set_nextbcast_argu(next_task_argu, (char *)argu->buff+extent*max_seg_count, argu->up_seg_count, argu->low_seg_count, argu->dtype, argu->root_low_rank, argu->root_up_rank, argu->up_comm, argu->low_comm, argu->num_segments, argu->low_rank, argu->cur_seg + 1, argu->w_rank, argu->last_seg_count);
             /* init the next task */
             init_task(next, mca_coll_future_nextbcast, (void *)(next_task_argu));
             /* add the nextbcast task into future, nextbcast task will be triggered by the future */
@@ -323,8 +268,7 @@ mca_coll_future_bcast_intra_adapt(void *buff,
 {
     ptrdiff_t extent, lb;
     ompi_datatype_get_extent(dtype, &lb, &extent);
-    int w_size, w_rank, i;
-    w_size = ompi_comm_size(comm);
+    int w_rank, i;
     w_rank = ompi_comm_rank(comm);
     int up_seg_count = mca_coll_future_component.future_bcast_up_count;
     int low_seg_count = mca_coll_future_component.future_bcast_low_count;
@@ -335,89 +279,19 @@ mca_coll_future_bcast_intra_adapt(void *buff,
     int num_segments = (count + max_seg_count - 1) / max_seg_count;
     OPAL_OUTPUT_VERBOSE((20, mca_coll_future_component.future_output, "In Future up_count %d low_count %d count %d num_seg %d\n", up_seg_count, low_seg_count, count, num_segments));
 
-    ompi_communicator_t *sm_comm;
-    ompi_communicator_t *leader_comm;
-    int *vranks;
-    int sm_rank, sm_size;
-    int leader_rank;
+    /* create the subcommunicators */
     mca_coll_future_module_t *future_module = (mca_coll_future_module_t *)module;
-    /* use cached communicators if possible */
-    if (future_module->cached_comm == comm && future_module->cached_sm_comm != NULL && future_module->cached_leader_comm != NULL && future_module->cached_vranks != NULL) {
-        sm_comm = future_module->cached_sm_comm;
-        leader_comm = future_module->cached_leader_comm;
-        vranks = future_module->cached_vranks;
-        sm_size = ompi_comm_size(sm_comm);
-        sm_rank = ompi_comm_rank(sm_comm);
-        leader_rank = ompi_comm_rank(leader_comm);
-    }
-    /* create communicators if there is no cached communicator */
-    else {
-        /* create sm_comm which contain all the process on a node */
-        const int *origin_priority = NULL;
+    mca_coll_future_comm_create(comm, future_module);
+    ompi_communicator_t *low_comm = future_module->cached_low_comm;
+    ompi_communicator_t *up_comm = future_module->cached_up_comm;
+    int *vranks = future_module->cached_vranks;
+    int low_rank = ompi_comm_rank(low_comm);
+    int low_size = ompi_comm_size(low_comm);
 
-        /* lower future module priority */
-        int future_var_id;
-        int tmp_future_priority = 0;
-        int tmp_future_origin = 0;
-        mca_base_var_find_by_name("coll_future_priority", &future_var_id);
-        mca_base_var_get_value(future_var_id, &origin_priority, NULL, NULL);
-        tmp_future_origin = *origin_priority;
-        mca_base_var_set_flag(future_var_id, MCA_BASE_VAR_FLAG_SETTABLE, true);
-        mca_base_var_set_value(future_var_id, &tmp_future_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
-        comm->c_coll->coll_allreduce = ompi_coll_base_allreduce_intra_recursivedoubling;
-
-        int var_id;
-        int tmp_priority = 60;
-        int tmp_origin = 0;
-        //const int *tmp = NULL;
-        mca_base_var_find_by_name("coll_shared_priority", &var_id);
-        mca_base_var_get_value(var_id, &origin_priority, NULL, NULL);
-        tmp_origin = *origin_priority;
-        OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] sm_priority origin %d %d\n", w_rank, *origin_priority, tmp_origin));
-        mca_base_var_set_flag(var_id, MCA_BASE_VAR_FLAG_SETTABLE, true);
-        mca_base_var_set_value(var_id, &tmp_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
-        //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
-        //printf("sm_priority after set %d %d\n", *tmp);
-        ompi_comm_split_type(comm, MPI_COMM_TYPE_SHARED, 0, (opal_info_t *)(&ompi_mpi_info_null), &sm_comm);
-        mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
-        //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
-        //printf("[%d] sm_priority set back %d\n", w_rank, *tmp);
-        sm_size = ompi_comm_size(sm_comm);
-        sm_rank = ompi_comm_rank(sm_comm);
-        
-        /* create leader_comm which contain one process per node (across nodes) */
-        mca_base_var_find_by_name("coll_adapt_priority", &var_id);
-        mca_base_var_get_value(var_id, &origin_priority, NULL, NULL);
-        tmp_origin = *origin_priority;
-        OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] adapt_priority origin %d %d\n", w_rank, *origin_priority, tmp_origin));
-        mca_base_var_set_flag(var_id, MCA_BASE_VAR_FLAG_SETTABLE, true);
-        mca_base_var_set_value(var_id, &tmp_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
-        //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
-        //printf("adapt_priority after set %d %d\n", *tmp);
-        ompi_comm_split(comm, sm_rank, w_rank, &leader_comm, false);
-        mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
-        //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
-        //printf("[%d] adapt_priority set back %d\n", w_rank, *tmp);
-        leader_rank = ompi_comm_rank(leader_comm);
-        
-        vranks = malloc(sizeof(int) * w_size);
-        /* do allgather to gather vrank from each process so every process will know other processes vrank*/
-        int vrank = sm_size * leader_rank + sm_rank;
-        comm->c_coll->coll_allgather(&vrank, 1, MPI_INT, vranks, 1, MPI_INT, comm, comm->c_coll->coll_allgather_module);
-        future_module->cached_comm = comm;
-        future_module->cached_sm_comm = sm_comm;
-        future_module->cached_leader_comm = leader_comm;
-        future_module->cached_vranks = vranks;
-        
-        mca_base_var_set_value(future_var_id, &tmp_future_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
-        comm->c_coll->coll_allreduce = mca_coll_future_allreduce_intra;
-
-    }
-    
-    int root_sm_rank;
-    int root_leader_rank;
-    mca_coll_future_get_ranks(vranks, root, sm_size, &root_sm_rank, &root_leader_rank);
-    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: root_sm_rank %d root_leader_rank %d\n", w_rank, root_sm_rank, root_leader_rank));
+    int root_low_rank;
+    int root_up_rank;
+    mca_coll_future_get_ranks(vranks, root, low_size, &root_low_rank, &root_up_rank);
+    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: root_low_rank %d root_up_rank %d\n", w_rank, root_low_rank, root_up_rank));
     
     /* create future */
     mca_coll_future_t *f = OBJ_NEW(mca_coll_future_t);
@@ -426,7 +300,7 @@ mca_coll_future_bcast_intra_adapt(void *buff,
     mca_coll_task_t *first = OBJ_NEW(mca_coll_task_t);
     /* setup up first task arguments */
     mca_bcast_first_argu_t *first_argu = malloc(sizeof(mca_bcast_first_argu_t));
-    mac_coll_future_set_first_argu(first_argu, (char *)buff, up_seg_count, dtype, root_leader_rank, leader_comm, up_num, sm_rank!=root_sm_rank);
+    mac_coll_future_set_first_argu(first_argu, (char *)buff, up_seg_count, dtype, root_up_rank, up_comm, up_num, low_rank!=root_low_rank);
     /* init the first task */
     init_task(first, mca_coll_future_first_task, (void *)(first_argu));
     /* add the first task into future, up task will trigger the future */
@@ -438,7 +312,7 @@ mca_coll_future_bcast_intra_adapt(void *buff,
         mca_coll_task_t *mid = OBJ_NEW(mca_coll_task_t);
         /* set up mid task arguments */
         mca_bcast_mid_argu_t *mid_argu = malloc(sizeof(mca_bcast_mid_argu_t));
-        mac_coll_future_set_mid_argu(mid_argu, (char *)buff, up_seg_count, low_seg_count, dtype, root_sm_rank, root_leader_rank, leader_comm, sm_comm, up_num, low_num, num_segments, 1, w_rank, count-(num_segments-1)*max_seg_count, sm_rank!=root_sm_rank);
+        mac_coll_future_set_mid_argu(mid_argu, (char *)buff, up_seg_count, low_seg_count, dtype, root_low_rank, root_up_rank, up_comm, low_comm, up_num, low_num, num_segments, 1, w_rank, count-(num_segments-1)*max_seg_count, low_rank!=root_low_rank);
         /* init the next task */
         init_task(mid, mca_coll_future_mid_task, (void *)(mid_argu));
         /* add the nextbcast task into future, nextbcast task will be triggered by the future */
@@ -451,7 +325,7 @@ mca_coll_future_bcast_intra_adapt(void *buff,
             mca_coll_task_t *last = OBJ_NEW(mca_coll_task_t);
             /* set up last task arguments */
             mca_bcast_argu_t *last_argu = malloc(sizeof(mca_bcast_argu_t));
-            mac_coll_future_set_bcast_argu(last_argu, (char *)buff+extent*low_seg_count*i, low_seg_count, dtype, root_sm_rank, sm_comm, false);
+            mac_coll_future_set_bcast_argu(last_argu, (char *)buff+extent*low_seg_count*i, low_seg_count, dtype, root_low_rank, low_comm, false);
             /* init the last task */
             init_task(last, mca_coll_future_bcast, (void *)(last_argu));
             /* add the last task into future, last task will be triggered by the future */
@@ -500,26 +374,26 @@ int mca_coll_future_mid_task(void *task_argu){
     /* no upper level ibcast needed */
     if (t->noop) {
         for (i=0; i<t->low_num; i++) {
-            t->low_comm->c_coll->coll_bcast((char *)t->buff+extent*t->low_seg_count*i, t->low_seg_count, t->dtype, t->root_sm_rank, t->low_comm, t->low_comm->c_coll->coll_bcast_module);
+            t->low_comm->c_coll->coll_bcast((char *)t->buff+extent*t->low_seg_count*i, t->low_seg_count, t->dtype, t->root_low_rank, t->low_comm, t->low_comm->c_coll->coll_bcast_module);
         }
     }
     else {
         if (t->num_segments == t->cur_seg + 1 && t->last_seg_count != max_seg_count) {
             ompi_request_t *req;
-            t->up_comm->c_coll->coll_ibcast((char *)t->buff+extent*max_seg_count, t->last_seg_count, t->dtype, t->root_leader_rank, t->up_comm, &req, t->up_comm->c_coll->coll_ibcast_module);
+            t->up_comm->c_coll->coll_ibcast((char *)t->buff+extent*max_seg_count, t->last_seg_count, t->dtype, t->root_up_rank, t->up_comm, &req, t->up_comm->c_coll->coll_ibcast_module);
             for (i=0; i<t->low_num; i++) {
-                t->low_comm->c_coll->coll_bcast((char *)t->buff+extent*t->low_seg_count*i, t->low_seg_count, t->dtype, t->root_sm_rank, t->low_comm, t->low_comm->c_coll->coll_bcast_module);
+                t->low_comm->c_coll->coll_bcast((char *)t->buff+extent*t->low_seg_count*i, t->low_seg_count, t->dtype, t->root_low_rank, t->low_comm, t->low_comm->c_coll->coll_bcast_module);
             }
             ompi_request_wait(&req, MPI_STATUSES_IGNORE);
         }
         else {
             ompi_request_t **reqs = malloc(sizeof(ompi_request_t *)*t->up_num);
             for (i=0; i<t->up_num; i++) {
-                t->up_comm->c_coll->coll_ibcast((char *)t->buff+extent*max_seg_count+extent*t->up_seg_count*i, t->up_seg_count, t->dtype, t->root_leader_rank, t->up_comm, &(reqs[i]), t->up_comm->c_coll->coll_ibcast_module);
+                t->up_comm->c_coll->coll_ibcast((char *)t->buff+extent*max_seg_count+extent*t->up_seg_count*i, t->up_seg_count, t->dtype, t->root_up_rank, t->up_comm, &(reqs[i]), t->up_comm->c_coll->coll_ibcast_module);
             }
             //ompi_request_wait_all(t->up_num, reqs, MPI_STATUSES_IGNORE);
             for (i=0; i<t->low_num; i++) {
-                t->low_comm->c_coll->coll_bcast((char *)t->buff+extent*t->low_seg_count*i, t->low_seg_count, t->dtype, t->root_sm_rank, t->low_comm, t->low_comm->c_coll->coll_bcast_module);
+                t->low_comm->c_coll->coll_bcast((char *)t->buff+extent*t->low_seg_count*i, t->low_seg_count, t->dtype, t->root_low_rank, t->low_comm, t->low_comm->c_coll->coll_bcast_module);
             }
             ompi_request_wait_all(t->up_num, reqs, MPI_STATUSES_IGNORE);
             free(reqs);
@@ -530,7 +404,7 @@ int mca_coll_future_mid_task(void *task_argu){
         mca_coll_task_t *mid = OBJ_NEW(mca_coll_task_t);
         /* set up mid task arguments */
         mca_bcast_mid_argu_t *mid_argu = malloc(sizeof(mca_bcast_mid_argu_t));
-        mac_coll_future_set_mid_argu(mid_argu, (char *)t->buff+extent*max_seg_count, t->up_seg_count, t->low_seg_count, t->dtype,t->root_sm_rank, t->root_leader_rank, t->up_comm, t->low_comm, t->up_num, t->low_num, t->num_segments, t->cur_seg+1, t->w_rank, t->last_seg_count, t->noop);
+        mac_coll_future_set_mid_argu(mid_argu, (char *)t->buff+extent*max_seg_count, t->up_seg_count, t->low_seg_count, t->dtype,t->root_low_rank, t->root_up_rank, t->up_comm, t->low_comm, t->up_num, t->low_num, t->num_segments, t->cur_seg+1, t->w_rank, t->last_seg_count, t->noop);
         /* init the next task */
         init_task(mid, mca_coll_future_mid_task, (void *)(mid_argu));
         /* add the nextbcast task into future, nextbcast task will be triggered by the future */
@@ -543,7 +417,7 @@ int mca_coll_future_mid_task(void *task_argu){
             mca_coll_task_t *last = OBJ_NEW(mca_coll_task_t);
             /* set up last task arguments */
             mca_bcast_argu_t *last_argu = malloc(sizeof(mca_bcast_argu_t));
-            mac_coll_future_set_bcast_argu(last_argu, (char *)t->buff+extent*max_seg_count, t->last_seg_count, t->dtype, t->root_sm_rank, t->low_comm, false);
+            mac_coll_future_set_bcast_argu(last_argu, (char *)t->buff+extent*max_seg_count, t->last_seg_count, t->dtype, t->root_low_rank, t->low_comm, false);
             /* init the last task */
             init_task(last, mca_coll_future_bcast, (void *)(last_argu));
             /* add the last task into future, last task will be triggered by the future */
@@ -554,7 +428,7 @@ int mca_coll_future_mid_task(void *task_argu){
                 mca_coll_task_t *last = OBJ_NEW(mca_coll_task_t);
                 /* set up last task arguments */
                 mca_bcast_argu_t *last_argu = malloc(sizeof(mca_bcast_argu_t));
-                mac_coll_future_set_bcast_argu(last_argu, (char *)t->buff+extent*max_seg_count+extent*t->low_seg_count*i, t->low_seg_count, t->dtype, t->root_sm_rank, t->low_comm, false);
+                mac_coll_future_set_bcast_argu(last_argu, (char *)t->buff+extent*max_seg_count+extent*t->low_seg_count*i, t->low_seg_count, t->dtype, t->root_low_rank, t->low_comm, false);
                 /* init the last task */
                 init_task(last, mca_coll_future_bcast, (void *)(last_argu));
                 /* add the last task into future, last task will be triggered by the future */
