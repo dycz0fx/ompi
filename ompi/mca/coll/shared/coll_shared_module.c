@@ -80,10 +80,10 @@ static void mca_coll_shared_module_construct(mca_coll_shared_module_t *module)
     module->enabled = false;
     module->sm_data_ptr = NULL;
     module->sm_data_win = NULL;
-    //module->data_buf = NULL;
+    module->data_buf = NULL;
     module->sm_ctrl_ptr = NULL;
     module->sm_ctrl_win = NULL;
-    //module->ctrl_buf = NULL;
+    module->ctrl_buf = NULL;
     module->super.coll_module_disable = mca_coll_shared_module_disable;
 }
 
