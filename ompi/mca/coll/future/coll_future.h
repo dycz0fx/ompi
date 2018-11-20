@@ -119,6 +119,48 @@ struct mca_allreduce_argu_s {
 };
 typedef struct mca_allreduce_argu_s mca_allreduce_argu_t;
 
+struct mca_scatter_argu_s {
+    mca_coll_task_t *cur_task;
+    void *sbuf;
+    void *sbuf_inter_free;
+    void *sbuf_reorder_free;
+    int scount;
+    struct ompi_datatype_t *sdtype;
+    void *rbuf;
+    int rcount;
+    struct ompi_datatype_t *rdtype;
+    int root;
+    int root_up_rank;
+    int root_low_rank;
+    struct ompi_communicator_t *up_comm;
+    struct ompi_communicator_t *low_comm;
+    int w_rank;
+    bool noop;
+    ompi_request_t *req;
+};
+typedef struct mca_scatter_argu_s mca_scatter_argu_t;
+
+struct mca_gather_argu_s {
+    mca_coll_task_t *cur_task;
+    void *sbuf;
+    void *sbuf_inter_free;
+    int scount;
+    struct ompi_datatype_t *sdtype;
+    void *rbuf;
+    int rcount;
+    struct ompi_datatype_t *rdtype;
+    int root;
+    int root_up_rank;
+    int root_low_rank;
+    struct ompi_communicator_t *up_comm;
+    struct ompi_communicator_t *low_comm;
+    int w_rank;
+    bool noop;
+    ompi_request_t *req;
+};
+typedef struct mca_gather_argu_s mca_gather_argu_t;
+
+
 /**
  * Structure to hold the future coll component.  First it holds the
  * base coll component, and then holds a bunch of
@@ -154,6 +196,8 @@ typedef struct mca_coll_future_module_t {
     struct ompi_communicator_t *cached_low_comm;
     struct ompi_communicator_t *cached_up_comm;
     int *cached_vranks;
+    int *cached_topo;
+    bool is_mapbycore;
 } mca_coll_future_module_t;
 OBJ_CLASS_DECLARATION(mca_coll_future_module_t);
 
@@ -179,6 +223,15 @@ int future_request_free(ompi_request_t** request);
 
 /* Subcommunicator creation */
 void mca_coll_future_comm_create(struct ompi_communicator_t *comm, mca_coll_future_module_t *future_module);
+
+/* Gather topology information */
+int mca_coll_future_pow10_int(int pow_value);
+int mca_coll_future_hostname_to_number(char* hostname, int size);
+void mca_coll_future_topo_get(int *topo, struct ompi_communicator_t* comm, int num_topo_level);
+void mca_coll_future_topo_sort(int *topo, int start, int end, int size, int level, int num_topo_level);
+bool mca_coll_future_topo_is_mapbycore(int *topo, struct ompi_communicator_t *comm, int num_topo_level);
+int *mca_coll_future_topo_init(struct ompi_communicator_t *comm, mca_coll_future_module_t *future_module, int num_topo_level);
+void mca_coll_future_topo_print(int *topo, struct ompi_communicator_t *comm, int num_topo_level);
 
 /* Bcast */
 int mca_coll_future_bcast_intra(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
@@ -209,11 +262,11 @@ mca_coll_future_allreduce_intra(const void *sbuf,
                                 struct ompi_op_t *op,
                                 struct ompi_communicator_t *comm,
                                 mca_coll_base_module_t *module);
-int mca_coll_future_sr_task(void *task_argu);
-int mca_coll_future_ir_task(void *task_argu);
-int mca_coll_future_ib_task(void *task_argu);
-int mca_coll_future_sb_task(void *task_argu);
-void mac_coll_future_set_argu(mca_allreduce_argu_t *argu,
+int mca_coll_future_allreduce_sr_task(void *task_argu);
+int mca_coll_future_allreduce_ir_task(void *task_argu);
+int mca_coll_future_allreduce_ib_task(void *task_argu);
+int mca_coll_future_allreduce_sb_task(void *task_argu);
+void mac_coll_future_set_allreduce_argu(mca_allreduce_argu_t *argu,
                               mca_coll_task_t *cur_task,
                               void *sbuf,
                               void *rbuf,
@@ -231,6 +284,65 @@ void mac_coll_future_set_argu(mca_allreduce_argu_t *argu,
                               bool noop,
                               ompi_request_t *req,
                               int *completed);
+
+/* Scatter */
+int
+ompi_coll_future_scatter_intra(const void *sbuf, int scount,
+                               struct ompi_datatype_t *sdtype,
+                               void *rbuf, int rcount,
+                               struct ompi_datatype_t *rdtype,
+                               int root,
+                               struct ompi_communicator_t *comm,
+                               mca_coll_base_module_t *module);
+int mca_coll_future_scatter_us_task(void *task_argu);
+int mca_coll_future_scatter_ls_task(void *task_argu);
+void mac_coll_future_set_scatter_argu(mca_scatter_argu_t *argu,
+                                      mca_coll_task_t *cur_task,
+                                      void *sbuf,
+                                      void *sbuf_inter_free,
+                                      void *sbuf_reorder_free,
+                                      int scount,
+                                      struct ompi_datatype_t *sdtype,
+                                      void *rbuf,
+                                      int rcount,
+                                      struct ompi_datatype_t *rdtype,
+                                      int root,
+                                      int root_up_rank,
+                                      int root_low_rank,
+                                      struct ompi_communicator_t *up_comm,
+                                      struct ompi_communicator_t *low_comm,
+                                      int w_rank,
+                                      bool noop,
+                                      ompi_request_t *req);
+
+/* Gatter */
+int
+ompi_coll_future_gather_intra(const void *sbuf, int scount,
+                              struct ompi_datatype_t *sdtype,
+                              void *rbuf, int rcount,
+                              struct ompi_datatype_t *rdtype,
+                              int root,
+                              struct ompi_communicator_t *comm,
+                              mca_coll_base_module_t *module);
+int mca_coll_future_gather_lg_task(void *task_argu);
+int mca_coll_future_gather_ug_task(void *task_argu);
+void mac_coll_future_set_gather_argu(mca_scatter_argu_t *argu,
+                                     mca_coll_task_t *cur_task,
+                                     void *sbuf,
+                                     void *sbuf_inter_free,
+                                     int scount,
+                                     struct ompi_datatype_t *sdtype,
+                                     void *rbuf,
+                                     int rcount,
+                                     struct ompi_datatype_t *rdtype,
+                                     int root,
+                                     int root_up_rank,
+                                     int root_low_rank,
+                                     struct ompi_communicator_t *up_comm,
+                                     struct ompi_communicator_t *low_comm,
+                                     int w_rank,
+                                     bool noop,
+                                     ompi_request_t *req);
 END_C_DECLS
 
 #endif /* MCA_COLL_FUTURE_EXPORT_H */
