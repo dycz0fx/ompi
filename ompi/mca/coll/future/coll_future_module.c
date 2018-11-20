@@ -62,6 +62,8 @@
 
 #include "ompi/mca/coll/base/coll_tags.h"
 #include "ompi/mca/pml/pml.h"
+#include <math.h>
+#include <limits.h>
 
 
 /*
@@ -83,6 +85,8 @@ static void mca_coll_future_module_construct(mca_coll_future_module_t *module)
     module->cached_low_comm = NULL;
     module->cached_up_comm = NULL;
     module->cached_vranks = NULL;
+    module->cached_topo = NULL;
+    module->is_mapbycore = false;
 }
 
 /*
@@ -178,12 +182,12 @@ mca_coll_future_comm_query(struct ompi_communicator_t *comm, int *priority)
     future_module->super.coll_barrier    = NULL;
     future_module->super.coll_bcast      = mca_coll_future_bcast_intra_adapt;
     future_module->super.coll_exscan     = NULL;
-    future_module->super.coll_gather     = NULL;
+    future_module->super.coll_gather     = ompi_coll_future_gather_intra;
     future_module->super.coll_gatherv    = NULL;
     future_module->super.coll_reduce     = NULL;
     future_module->super.coll_reduce_scatter = NULL;
     future_module->super.coll_scan       = NULL;
-    future_module->super.coll_scatter    = NULL;
+    future_module->super.coll_scatter    = ompi_coll_future_scatter_intra;
     future_module->super.coll_scatterv   = NULL;
     
     opal_output_verbose(10, ompi_coll_base_framework.framework_output,
@@ -292,3 +296,167 @@ void mca_coll_future_comm_create(struct ompi_communicator_t *comm, mca_coll_futu
     }
 }
 
+int mca_coll_future_pow10_int(int pow_value){
+    int i, result = 1;
+    for (i=0; i<pow_value; i++) {
+        result *= 10;
+    }
+    return result;
+}
+
+int mca_coll_future_hostname_to_number(char* hostname, int size) {
+    int i=0, j=0;
+    char * number_array = (char *)malloc(sizeof(char)*size);
+    while (hostname[i] != '\0'){
+        if(hostname[i] >= '0' && hostname[i] <= '9'){
+            number_array[j++] = hostname[i];
+        }
+        i++;
+    }
+    int number = 0;
+    for (i=0; i<j; i++){
+        number += (number_array[i]-'0') * mca_coll_future_pow10_int(j-1-i);
+    }
+    free(number_array);
+    return number;
+}
+
+void mca_coll_future_topo_get(int *topo, struct ompi_communicator_t* comm, int num_topo_level){
+    int * self_topo = (int *)malloc(sizeof(int) * num_topo_level);
+    /* set daemon vpid */
+    //self_topo[0] = OMPI_RTE_MY_NODEID;
+    char hostname[1024];
+    //printf("[%d]: %s\n", ompi_comm_rank(comm), hostname);
+    gethostname(hostname, 1024);
+    self_topo[0] = mca_coll_future_hostname_to_number(hostname, 1024);
+    //set core id
+    self_topo[1] = ompi_comm_rank(comm);
+    
+    printf("[topo %d]: %d %d\n", ompi_comm_rank(comm), self_topo[0], self_topo[1]);
+    fflush(stdout);
+    //do allgather
+    ompi_coll_base_allgather_intra_bruck(self_topo, num_topo_level, MPI_INT, topo, num_topo_level, MPI_INT, comm, comm->c_coll->coll_allgather_module);
+    printf("[topo %d]: after allgather\n", ompi_comm_rank(comm));
+    fflush(stdout);
+    free(self_topo);
+    return;
+}
+
+void mca_coll_future_topo_sort(int *topo, int start, int end, int size, int level, int num_topo_level){
+    if (level > num_topo_level-1 || start >= end) {
+        return;
+    }
+    int i, j;
+    //    printf("Sort [start %d, end %d, level %d]\n", start, end, level);
+    //    printf("Before sort: ");
+    //    for (i=start; i<=end; i++) {
+    //        printf("%d ", topo[i*num_topo_level+level]);
+    //    }
+    //    printf("\n");
+    int min = INT_MAX;
+    int min_loc = -1;
+    for (i=start; i<=end; i++) {
+        //find min
+        for (j=i; j<=end; j++) {
+            if (topo[j*num_topo_level+level] < min) {
+                min = topo[j*num_topo_level+level];
+                min_loc = j;
+                //printf("i %d j %d min %d, min_loc %d\n", i, j, min, min_loc);
+                
+            }
+        }
+        //swap i and min_loc
+        //printf("min %d, min_loc %d\n", min, min_loc);
+        int temp;
+        for (j=0; j<num_topo_level; j++) {
+            temp = topo[i*num_topo_level+j];
+            topo[i*num_topo_level+j] = topo[min_loc*num_topo_level+j];
+            topo[min_loc*num_topo_level+j] = temp;
+        }
+        min = INT_MAX;
+        min_loc = -1;
+    }
+    //    printf("After sort: ");
+    //    for (i=start; i<=end; i++) {
+    //        printf("%d ", topo[i*num_topo_level+level]);
+    //    }
+    //    printf("\n");
+    int last;
+    int new_start;
+    int new_end;
+    for (i=start; i<=end; i++) {
+        if (i == start) {
+            last = topo[i*num_topo_level+level];
+            new_start = start;
+        }
+        else if (i == end) {
+            new_end = end;
+            mca_coll_future_topo_sort(topo, new_start, new_end, size, level+1, num_topo_level);
+        }
+        else if (last != topo[i*num_topo_level+level]) {
+            new_end = i-1;
+            mca_coll_future_topo_sort(topo, new_start, new_end, size, level+1, num_topo_level);
+            new_start = i;
+            last = topo[i*num_topo_level+level];
+        }
+    }
+    return;
+}
+
+bool mca_coll_future_topo_is_mapbycore(int *topo, struct ompi_communicator_t *comm, int num_topo_level){
+    int i;
+    int size = ompi_comm_size(comm);
+    for (i=1; i<size; i++) {
+        if (topo[(i-1)*num_topo_level] > topo[i*num_topo_level] || topo[(i-1)*num_topo_level+1] > topo[i*num_topo_level+1]) {
+            return false;
+            
+        }
+    }
+    return true;
+}
+
+int *mca_coll_future_topo_init(struct ompi_communicator_t *comm, mca_coll_future_module_t *future_module, int num_topo_level){
+    int size;
+    size = ompi_comm_size(comm);
+    int *topo;
+    if (!((future_module->cached_topo) && (future_module->cached_comm == comm))) {
+        if (future_module->cached_topo) {
+            free(future_module->cached_topo);
+            future_module->cached_topo = NULL;
+        }
+        topo = (int *)malloc(sizeof(int)*size*num_topo_level);
+        //get topo infomation
+        mca_coll_future_topo_get(topo, comm, num_topo_level);
+        mca_coll_future_topo_print(topo, comm, num_topo_level);
+        
+        //check if the processes are mapped by core
+        future_module->is_mapbycore = mca_coll_future_topo_is_mapbycore(topo, comm, num_topo_level);
+        //sort the topo such that each group is contiguous
+        if (!future_module->is_mapbycore) {
+            mca_coll_future_topo_sort(topo, 0, size-1, size, 0, num_topo_level);
+        }
+        future_module->cached_topo = topo;
+        future_module->cached_comm = comm;
+    }
+    else {
+        topo = future_module->cached_topo;
+    }
+    
+    mca_coll_future_topo_print(topo, comm, num_topo_level);
+    return topo;
+}
+
+void mca_coll_future_topo_print(int *topo, struct ompi_communicator_t *comm, int num_topo_level){
+    int rank = ompi_comm_rank(comm);
+    int size = ompi_comm_size(comm);
+    
+    if (rank == 0) {
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: Future Scatter topo: ", rank));
+        int i;
+        for (i=0; i<size*num_topo_level; i++) {
+            OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "%d ", topo[i]));
+        }
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "\n"));
+
+    }
+}
