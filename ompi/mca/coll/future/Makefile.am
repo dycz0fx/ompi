@@ -24,6 +24,8 @@ sources = \
 coll_future.h \
 coll_future_trigger.h \
 coll_future_bcast.c \
+coll_future_scatter.c \
+coll_future_gather.c \
 coll_future_allreduce.c \
 coll_future_component.c \
 coll_future_module.c \
