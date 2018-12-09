@@ -107,6 +107,10 @@ static void mca_coll_future_module_destruct(mca_coll_future_module_t *module)
         free(module->cached_vranks);
         module->cached_vranks = NULL;
     }
+    if (module->cached_topo != NULL) {
+        free(module->cached_topo);
+        module->cached_topo = NULL;
+    }
 }
 
 /*
@@ -173,7 +177,7 @@ mca_coll_future_comm_query(struct ompi_communicator_t *comm, int *priority)
     /* All is good -- return a module */
     future_module->super.coll_module_enable = future_module_enable;
     future_module->super.ft_event        = NULL;
-    future_module->super.coll_allgather  = NULL;
+    future_module->super.coll_allgather  = mca_coll_future_allgather_intra;
     future_module->super.coll_allgatherv = NULL;
     future_module->super.coll_allreduce  = mca_coll_future_allreduce_intra;
     future_module->super.coll_alltoall   = NULL;
@@ -248,7 +252,7 @@ void mca_coll_future_comm_create(struct ompi_communicator_t *comm, mca_coll_futu
         mca_base_var_set_flag(future_var_id, MCA_BASE_VAR_FLAG_SETTABLE, true);
         mca_base_var_set_value(future_var_id, &tmp_future_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
         comm->c_coll->coll_allreduce = ompi_coll_base_allreduce_intra_recursivedoubling;
-        
+        comm->c_coll->coll_allgather = ompi_coll_base_allgather_intra_recursivedoubling;
         int var_id;
         int tmp_priority = 100;
         int tmp_origin = 0;
@@ -293,6 +297,7 @@ void mca_coll_future_comm_create(struct ompi_communicator_t *comm, mca_coll_futu
         
         mca_base_var_set_value(future_var_id, &tmp_future_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
         comm->c_coll->coll_allreduce = mca_coll_future_allreduce_intra;
+        comm->c_coll->coll_allgather = mca_coll_future_allgather_intra;
     }
 }
 

@@ -146,6 +146,7 @@ BEGIN_C_DECLS
     int mca_coll_shared_bcast_linear_nofence_intra(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
     int mca_coll_shared_bcast_binary(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
     int mca_coll_shared_bcast_binomial(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
+    int mca_coll_shared_bcast_pipeline(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
     int ompi_coll_shared_bcast_intra_generic( void* buffer,
                                        int original_count,
                                        struct ompi_datatype_t* datatype,

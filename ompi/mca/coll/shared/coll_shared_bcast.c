@@ -6,6 +6,9 @@ int mca_coll_shared_bcast_intra(void *buff, int count, struct ompi_datatype_t *d
     if (count*extent <= 2048) {
         mca_coll_shared_bcast_binomial(buff, count, dtype, root, comm, module);
     }
+    if (count*extent > MAX_SEG_SIZE) {
+        mca_coll_shared_bcast_pipeline(buff, count, dtype, root, comm, module);
+    }
     else{
         mca_coll_shared_bcast_linear_intra(buff, count, dtype, root, comm, module);
     }
@@ -149,6 +152,14 @@ int mca_coll_shared_bcast_binary(void *buff, int count, struct ompi_datatype_t *
 int mca_coll_shared_bcast_binomial(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
     size_t seg_count = 2048;
     ompi_coll_tree_t* tree = ompi_coll_base_topo_build_bmtree(comm, root);
+    ompi_coll_shared_bcast_intra_generic(buff, count, dtype, root, comm, module, seg_count, tree);
+    ompi_coll_base_topo_destroy_tree(&tree);
+    return OMPI_SUCCESS;
+}
+
+int mca_coll_shared_bcast_pipeline(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module){
+    size_t seg_count = 65536;
+    ompi_coll_tree_t * tree = ompi_coll_base_topo_build_chain(1, comm, root);
     ompi_coll_shared_bcast_intra_generic(buff, count, dtype, root, comm, module, seg_count, tree);
     ompi_coll_base_topo_destroy_tree(&tree);
     return OMPI_SUCCESS;
