@@ -27,6 +27,7 @@ coll_future_bcast.c \
 coll_future_scatter.c \
 coll_future_gather.c \
 coll_future_allreduce.c \
+coll_future_allgather.c \
 coll_future_component.c \
 coll_future_module.c \
 coll_future_trigger.c \

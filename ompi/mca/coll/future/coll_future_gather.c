@@ -44,7 +44,7 @@ ompi_coll_future_gather_intra(const void *sbuf, int scount,
     int root_low_rank;
     int root_up_rank;
     mca_coll_future_get_ranks(vranks, root, low_size, &root_low_rank, &root_up_rank);
-    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: Future Scatter root %d root_low_rank %d root_up_rank %d\n", w_rank, root, root_low_rank, root_up_rank));
+    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: Future Gather root %d root_low_rank %d root_up_rank %d\n", w_rank, root, root_low_rank, root_up_rank));
 
     char *reorder_buf = NULL;
     char *reorder_rbuf = NULL;
@@ -53,7 +53,7 @@ ompi_coll_future_gather_intra(const void *sbuf, int scount,
     if (w_rank == root) {
         /* if the processes are mapped-by core, no need to reorder */
         if (future_module->is_mapbycore) {
-            OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: Future Scatter is_bycore: ", w_rank));
+            OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: Future Gather is_bycore: ", w_rank));
             reorder_rbuf = (char *)rbuf;
         }
         else {
@@ -68,7 +68,7 @@ ompi_coll_future_gather_intra(const void *sbuf, int scount,
     /* create lg task */
     mca_coll_task_t *lg = OBJ_NEW(mca_coll_task_t);
     /* setup lg task arguments */
-    mca_scatter_argu_t *lg_argu = malloc(sizeof(mca_gather_argu_t));
+    mca_gather_argu_t *lg_argu = malloc(sizeof(mca_gather_argu_t));
     mac_coll_future_set_gather_argu(lg_argu, lg, (char *)sbuf, NULL, scount, sdtype, reorder_rbuf, rcount, rdtype, root, root_up_rank, root_low_rank, up_comm, low_comm, w_rank, low_rank!=root_low_rank, temp_request);
     /* init lg task */
     init_task(lg, mca_coll_future_gather_lg_task, (void *)(lg_argu));
@@ -85,7 +85,7 @@ ompi_coll_future_gather_intra(const void *sbuf, int scount,
     if (w_rank == root && !future_module->is_mapbycore) {
         for (i=0; i<up_size; i++) {
             for (j=0; j<low_size; j++) {
-                OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: Future Scatter copy from %d %d\n", w_rank, (i*low_size+j)*2+1, topo[(i*low_size+j)*2+1]));
+                OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: Future Gather copy from %d %d\n", w_rank, (i*low_size+j)*2+1, topo[(i*low_size+j)*2+1]));
                 ompi_datatype_copy_content_same_ddt(rdtype,
                                                     (ptrdiff_t)rcount,
                                                     (char *)rbuf + rextent*(ptrdiff_t)topo[(i*low_size+j)*2+1]*(ptrdiff_t)rcount,
@@ -100,7 +100,7 @@ ompi_coll_future_gather_intra(const void *sbuf, int scount,
 
 int mca_coll_future_gather_lg_task(void *task_argu)
 {
-    mca_scatter_argu_t *t = (mca_scatter_argu_t *)task_argu;
+    mca_gather_argu_t *t = (mca_gather_argu_t *)task_argu;
     OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Gather:  lg\n", t->w_rank));
     OBJ_RELEASE(t->cur_task);
     
@@ -132,7 +132,7 @@ int mca_coll_future_gather_lg_task(void *task_argu)
 }
 
 int mca_coll_future_gather_ug_task(void *task_argu){
-    mca_scatter_argu_t *t = (mca_scatter_argu_t *)task_argu;
+    mca_gather_argu_t *t = (mca_gather_argu_t *)task_argu;
     OBJ_RELEASE(t->cur_task);
 
     if (t->noop) {
@@ -141,13 +141,13 @@ int mca_coll_future_gather_ug_task(void *task_argu){
     else {
         int low_size = ompi_comm_size(t->low_comm);
         /* inter node gather */
-        t->up_comm->c_coll->coll_gather((char *)t->sbuf, t->scount*low_size, t->sdtype, (char *)t->rbuf, t->rcount*low_size, t->rdtype, t->root_up_rank, t->up_comm, t->up_comm->c_coll->coll_scatter_module);
+        t->up_comm->c_coll->coll_gather((char *)t->sbuf, t->scount*low_size, t->sdtype, (char *)t->rbuf, t->rcount*low_size, t->rdtype, t->root_up_rank, t->up_comm, t->up_comm->c_coll->coll_gather_module);
         
         if (t->sbuf_inter_free != NULL) {
             free(t->sbuf_inter_free);
             t->sbuf_inter_free = NULL;
         }
-        OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Scatter:  ug gather finish\n", t->w_rank));
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Gather:  ug gather finish\n", t->w_rank));
     }
     ompi_request_t *temp_req = t->req;
     free(t);
@@ -155,7 +155,7 @@ int mca_coll_future_gather_ug_task(void *task_argu){
     return OMPI_SUCCESS;
 }
 
-void mac_coll_future_set_gather_argu(mca_scatter_argu_t *argu,
+void mac_coll_future_set_gather_argu(mca_gather_argu_t *argu,
                                       mca_coll_task_t *cur_task,
                                       void *sbuf,
                                       void *sbuf_inter_free,

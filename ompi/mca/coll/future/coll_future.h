@@ -160,6 +160,25 @@ struct mca_gather_argu_s {
 };
 typedef struct mca_gather_argu_s mca_gather_argu_t;
 
+struct mca_allgather_argu_s {
+    mca_coll_task_t *cur_task;
+    void *sbuf;
+    void *sbuf_inter_free;
+    int scount;
+    struct ompi_datatype_t *sdtype;
+    void *rbuf;
+    int rcount;
+    struct ompi_datatype_t *rdtype;
+    int root_low_rank;
+    struct ompi_communicator_t *up_comm;
+    struct ompi_communicator_t *low_comm;
+    int w_rank;
+    bool noop;
+    bool is_mapbycore;
+    int *topo;
+    ompi_request_t *req;
+};
+typedef struct mca_allgather_argu_s mca_allgather_argu_t;
 
 /**
  * Structure to hold the future coll component.  First it holds the
@@ -326,7 +345,7 @@ ompi_coll_future_gather_intra(const void *sbuf, int scount,
                               mca_coll_base_module_t *module);
 int mca_coll_future_gather_lg_task(void *task_argu);
 int mca_coll_future_gather_ug_task(void *task_argu);
-void mac_coll_future_set_gather_argu(mca_scatter_argu_t *argu,
+void mac_coll_future_set_gather_argu(mca_gather_argu_t *argu,
                                      mca_coll_task_t *cur_task,
                                      void *sbuf,
                                      void *sbuf_inter_free,
@@ -343,6 +362,36 @@ void mac_coll_future_set_gather_argu(mca_scatter_argu_t *argu,
                                      int w_rank,
                                      bool noop,
                                      ompi_request_t *req);
+
+/* Allgather */
+int
+mca_coll_future_allgather_intra(const void *sbuf, int scount,
+                                struct ompi_datatype_t *sdtype,
+                                void* rbuf, int rcount,
+                                struct ompi_datatype_t *rdtype,
+                                struct ompi_communicator_t *comm,
+                                mca_coll_base_module_t *module);
+int mca_coll_future_allgather_lg_task(void *task_argu);
+int mca_coll_future_allgather_uag_task(void *task_argu);
+int mca_coll_future_allgather_lb_task(void *task_argu);
+void mac_coll_future_set_allgather_argu(mca_allgather_argu_t *argu,
+                                        mca_coll_task_t *cur_task,
+                                        void *sbuf,
+                                        void *sbuf_inter_free,
+                                        int scount,
+                                        struct ompi_datatype_t *sdtype,
+                                        void *rbuf,
+                                        int rcount,
+                                        struct ompi_datatype_t *rdtype,
+                                        int root_low_rank,
+                                        struct ompi_communicator_t *up_comm,
+                                        struct ompi_communicator_t *low_comm,
+                                        int w_rank,
+                                        bool noop,
+                                        bool is_mapbycore,
+                                        int *topo,
+                                        ompi_request_t *req);
+
 END_C_DECLS
 
 #endif /* MCA_COLL_FUTURE_EXPORT_H */
