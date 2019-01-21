@@ -131,7 +131,7 @@ static mca_coll_adapt_item_t * get_next_ready_item(opal_list_t* list, int num_ch
     return NULL;
 }
 
-static int add_to_list(opal_list_t* list, int id, mca_coll_adapt_inbuf_t *inbuf_to_free, mca_coll_adapt_item_t **op_item){
+static int add_to_list(opal_list_t* list, int id){
     mca_coll_adapt_item_t *item;
     int ret = 0;
     for(item = (mca_coll_adapt_item_t *) opal_list_get_first(list);
@@ -139,8 +139,6 @@ static int add_to_list(opal_list_t* list, int id, mca_coll_adapt_inbuf_t *inbuf_
         item = (mca_coll_adapt_item_t *) ((opal_list_item_t *)item)->opal_list_next) {
         if (item->id == id) {
             (item->count)++;
-            item->inbuf_to_free[item->count-1] = inbuf_to_free;
-            *op_item = item;
             ret = 1;
             break;
         }
@@ -149,9 +147,6 @@ static int add_to_list(opal_list_t* list, int id, mca_coll_adapt_inbuf_t *inbuf_
         item = OBJ_NEW(mca_coll_adapt_item_t);
         item->id = id;
         item->count = 1;
-        item->inbuf_to_free[item->count-1] = inbuf_to_free;
-        item->op_event = NULL;
-        *op_item = item;
         opal_list_append(list, (opal_list_item_t *)item);
         ret = 2;
     }
@@ -185,7 +180,6 @@ static int ireduce_request_fini(mca_coll_adapt_reduce_context_t *context)
     OBJ_RELEASE(context->con->mutex_num_recv_segs);
     OBJ_RELEASE(context->con->mutex_recv_list);
     OBJ_RELEASE(context->con->mutex_num_sent);
-    fflush(stdout);
     if (context->con->tree->tree_nextsize > 0) {
         OBJ_RELEASE(context->con->inbuf_list);
         free(context->con->next_recv_segs);
@@ -270,10 +264,7 @@ static int send_cb(ompi_request_t *req){
 static int recv_cb(ompi_request_t *req){
     mca_coll_adapt_reduce_context_t *context = (mca_coll_adapt_reduce_context_t *) req->req_complete_cb_data;
     OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output, "[%d]: ireduce_recv_cb, peer %d, seg_id %d\n", context->con->rank, context->peer, context->frag_id));
-    
-    mca_coll_adapt_inbuf_t *inbuf_to_free = NULL;
-    int op_async_not_free = 0;
-    
+        
     int err;
     //atomic
     int32_t new_id = opal_atomic_add_fetch_32(&(context->con->next_recv_segs[context->child_id]), 1);
@@ -357,10 +348,11 @@ static int recv_cb(ompi_request_t *req){
     OPAL_THREAD_UNLOCK(context->con->mutex_op_list[context->frag_id]);
     
     //set recv list
-    OPAL_THREAD_LOCK (context->con->mutex_recv_list);
-    mca_coll_adapt_item_t *op_item = NULL;
-    add_to_list(context->con->recv_list, context->frag_id, inbuf_to_free, &op_item);
-    OPAL_THREAD_UNLOCK (context->con->mutex_recv_list);
+    if (context->con->rank != context->con->tree->tree_root) {
+        OPAL_THREAD_LOCK (context->con->mutex_recv_list);
+        add_to_list(context->con->recv_list, context->frag_id);
+        OPAL_THREAD_UNLOCK (context->con->mutex_recv_list);
+    }
     
     //send to parent
     if (context->con->rank != context->con->tree->tree_root && context->con->ongoing_send < mca_coll_adapt_component.adapt_ireduce_max_send_requests) {
@@ -413,7 +405,7 @@ static int recv_cb(ompi_request_t *req){
     }
     else{
         OPAL_THREAD_UNLOCK (context->con->mutex_num_recv_segs);
-        if (!keep_inbuf && context->inbuf != NULL && !op_async_not_free) {
+        if (!keep_inbuf && context->inbuf != NULL) {
             OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output, "[%d]: free context inbuf %p", context->con->rank, (void *)context->inbuf));
             opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)context->inbuf);
         }
@@ -439,6 +431,7 @@ int mca_coll_adapt_ireduce(const void *sbuf, void *rbuf, int count, struct ompi_
         //get ireduce tag
         int ireduce_tag = opal_atomic_add_fetch_32(&(comm->c_ireduce_tag), 1);
         ireduce_tag = (ireduce_tag % 4096) + 4096;
+        fflush(stdout);
         mca_coll_adapt_ireduce_fn_t reduce_func = (mca_coll_adapt_ireduce_fn_t)mca_coll_adapt_ireduce_algorithm_index[mca_coll_adapt_component.adapt_ireduce_algorithm].algorithm_fn_ptr;
         return reduce_func(sbuf, rbuf, count, dtype, op, root, comm, request, module, ireduce_tag);
     }
