@@ -476,11 +476,14 @@ int mca_coll_adapt_ireduce_chain(const void *sbuf, void *rbuf, int count, struct
 int mca_coll_adapt_ireduce_linear(const void *sbuf, void *rbuf, int count, struct ompi_datatype_t *dtype, struct ompi_op_t *op, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module, int ireduce_tag){
     int fanout = ompi_comm_size(comm) - 1;
     ompi_coll_tree_t * tree;
-    if (fanout > 1) {
+    if (fanout < 1) {
+        tree = ompi_coll_base_topo_build_chain(1, comm, root);
+    }
+    else if (fanout <= MAXTREEFANOUT) {
         tree = ompi_coll_base_topo_build_tree(ompi_comm_size(comm) - 1, comm, root);
     }
-    else{
-        tree = ompi_coll_base_topo_build_chain(1, comm, root);
+    else {
+        tree = ompi_coll_base_topo_build_tree(MAXTREEFANOUT, comm, root);
     }
     int err = mca_coll_adapt_ireduce_generic(sbuf, rbuf, count, dtype, op, root, comm, request, module, tree, mca_coll_adapt_component.adapt_ireduce_segment_size, ireduce_tag);
     return err;

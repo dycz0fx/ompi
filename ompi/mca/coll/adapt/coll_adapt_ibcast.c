@@ -331,11 +331,14 @@ int mca_coll_adapt_ibcast_chain(void *buff, int count, struct ompi_datatype_t *d
 int mca_coll_adapt_ibcast_linear(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module, int ibcast_tag){
     int fanout = ompi_comm_size(comm) - 1;
     ompi_coll_tree_t * tree;
-    if (fanout > 1) {
+    if (fanout < 1) {
+        tree = ompi_coll_base_topo_build_chain(1, comm, root);
+    }
+    else if (fanout <= MAXTREEFANOUT) {
         tree = ompi_coll_base_topo_build_tree(ompi_comm_size(comm) - 1, comm, root);
     }
-    else{
-        tree = ompi_coll_base_topo_build_chain(1, comm, root);
+    else {
+        tree = ompi_coll_base_topo_build_tree(MAXTREEFANOUT, comm, root);
     }
     int err = mca_coll_adapt_ibcast_generic(buff, count, datatype, root, comm, request, module, tree, mca_coll_adapt_component.adapt_ibcast_segment_size, ibcast_tag);
     return err;
