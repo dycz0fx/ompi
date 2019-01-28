@@ -194,10 +194,10 @@ typedef struct mca_coll_future_component_t {
     int future_priority;
     /* whether output the log message */
     int future_output;
-    /* up level segment count for bcast */
-    int future_bcast_up_count;
-    /* low level segment count for bcast */
-    int future_bcast_low_count;
+    /* up level segment size for bcast */
+    uint32_t future_bcast_up_segsize;
+    /* low level segment size for bcast */
+    uint32_t future_bcast_low_segsize;
     /* segment size for allreduce */
     uint32_t future_allreduce_segsize;
     
