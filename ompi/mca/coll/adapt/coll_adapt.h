@@ -81,6 +81,8 @@ struct mca_coll_adapt_module_t {
     
     /* Whether this module has been lazily initialized or not yet */
     bool enabled;
+    /* pointer to mca_coll_adapt_component */
+    mca_coll_adapt_component_t *adapt_component;
 };
 OBJ_CLASS_DECLARATION(mca_coll_adapt_module_t);
 

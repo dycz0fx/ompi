@@ -94,8 +94,8 @@ mca_coll_future_bcast_intra(void *buff,
     /* create the subcommunicators */
     mca_coll_future_module_t *future_module = (mca_coll_future_module_t *)module;
     mca_coll_future_comm_create(comm, future_module);
-    ompi_communicator_t *low_comm = future_module->cached_low_comm;
-    ompi_communicator_t *up_comm = future_module->cached_up_comm;
+    ompi_communicator_t *low_comm = future_module->cached_low_comms[mca_coll_future_component.future_bcast_low_module];
+    ompi_communicator_t *up_comm = future_module->cached_up_comms[mca_coll_future_component.future_bcast_up_module];
     int *vranks = future_module->cached_vranks;
     int low_rank = ompi_comm_rank(low_comm);
     int low_size = ompi_comm_size(low_comm);
@@ -278,20 +278,51 @@ mca_coll_future_bcast_intra_adapt(void *buff,
     int low_seg_count = count;
     size_t typelng;
     ompi_datatype_type_size(dtype, &typelng);
-    COLL_BASE_COMPUTED_SEGCOUNT(mca_coll_future_component.future_bcast_up_segsize, typelng, up_seg_count);
-    COLL_BASE_COMPUTED_SEGCOUNT(mca_coll_future_component.future_bcast_low_segsize, typelng, low_seg_count);
-    mca_coll_future_reset_seg_count(&up_seg_count, &low_seg_count, &count);
+    
+    /* create the subcommunicators */
+    mca_coll_future_module_t *future_module = (mca_coll_future_module_t *)module;
+    mca_coll_future_comm_create(comm, future_module);
+    ompi_communicator_t *low_comm;
+    ompi_communicator_t *up_comm;
+    /* auto tune is enabled */
+    if (mca_coll_future_component.future_auto_tune && mca_coll_future_component.future_auto_tuned != NULL) {
+        int n = future_auto_tuned_get_n(ompi_comm_size(future_module->cached_up_comms[0]));
+        int c = future_auto_tuned_get_c(ompi_comm_size(future_module->cached_low_comms[0]));
+        int m = future_auto_tuned_get_m(typelng * count);
+        int id = n*mca_coll_future_component.future_auto_tune_c*mca_coll_future_component.future_auto_tune_m + c*mca_coll_future_component.future_auto_tune_m + m;
+        int fs = mca_coll_future_component.future_auto_tuned[id].fs;
+        int us = mca_coll_future_component.future_auto_tuned[id].us;
+        int lmod = mca_coll_future_component.future_auto_tuned[id].lmod;
+        int alg = mca_coll_future_component.future_auto_tuned[id].alg;
+        /* set up fs */
+        COLL_BASE_COMPUTED_SEGCOUNT((size_t)fs, typelng, up_seg_count);
+        low_seg_count = up_seg_count;
+        /* set up lmod */
+        low_comm = future_module->cached_low_comms[lmod];
+        up_comm = future_module->cached_up_comms[mca_coll_future_component.future_bcast_up_module];
+        /* set up us */
+        ((mca_coll_adapt_module_t *)(up_comm->c_coll->coll_ibcast_module))->adapt_component->adapt_ibcast_segment_size = us;
+        /* set up alg */
+        ((mca_coll_adapt_module_t *)(up_comm->c_coll->coll_ibcast_module))->adapt_component->adapt_ibcast_algorithm = alg;
+        if (w_rank == 0) {
+            printf("in future autotuned count %d: fs %d us %d lmod %d alg %d\n", count, fs, us, lmod, alg);
+        }
+    }
+    else {
+        COLL_BASE_COMPUTED_SEGCOUNT(mca_coll_future_component.future_bcast_up_segsize, typelng, up_seg_count);
+        COLL_BASE_COMPUTED_SEGCOUNT(mca_coll_future_component.future_bcast_low_segsize, typelng, low_seg_count);
+        mca_coll_future_reset_seg_count(&up_seg_count, &low_seg_count, &count);
+        low_comm = future_module->cached_low_comms[mca_coll_future_component.future_bcast_low_module];
+        up_comm = future_module->cached_up_comms[mca_coll_future_component.future_bcast_up_module];
+
+    }
+    
     int max_seg_count = (up_seg_count > low_seg_count) ? up_seg_count : low_seg_count;
     int up_num = max_seg_count / up_seg_count;
     int low_num = max_seg_count / low_seg_count;
     int num_segments = (count + max_seg_count - 1) / max_seg_count;
     OPAL_OUTPUT_VERBOSE((20, mca_coll_future_component.future_output, "In Future up_count %d low_count %d count %d num_seg %d\n", up_seg_count, low_seg_count, count, num_segments));
-
-    /* create the subcommunicators */
-    mca_coll_future_module_t *future_module = (mca_coll_future_module_t *)module;
-    mca_coll_future_comm_create(comm, future_module);
-    ompi_communicator_t *low_comm = future_module->cached_low_comm;
-    ompi_communicator_t *up_comm = future_module->cached_up_comm;
+    
     int *vranks = future_module->cached_vranks;
     int low_rank = ompi_comm_rank(low_comm);
     int low_size = ompi_comm_size(low_comm);

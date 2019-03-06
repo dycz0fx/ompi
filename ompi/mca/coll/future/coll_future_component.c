@@ -33,7 +33,6 @@
 #include "ompi/mca/coll/coll.h"
 #include "coll_future.h"
 
-
 /*
  * Public string showing the coll ompi_future component version number
  */
@@ -44,6 +43,7 @@ const char *mca_coll_future_component_version_string =
 /*
  * Local functions
  */
+static int future_open(void);
 static int future_close(void);
 static int future_register(void);
 
@@ -69,6 +69,7 @@ mca_coll_future_component_t mca_coll_future_component = {
                                   OMPI_RELEASE_VERSION),
             
             /* Component functions */
+            .mca_open_component = future_open,
             .mca_close_component = future_close,
             .mca_register_component_params = future_register,
         },
@@ -86,8 +87,23 @@ mca_coll_future_component_t mca_coll_future_component = {
     /* future-component specifc information */
     
     /* (default) priority */
-    50,
+    20,
 };
+
+/*
+ * Init the component
+ */
+static int future_open(void){
+    mca_coll_future_component_t *cs = &mca_coll_future_component;
+    if (cs->future_auto_tune) {
+        cs->future_auto_tuned = (selection *)malloc(cs->future_auto_tune_n * cs->future_auto_tune_c * cs->future_auto_tune_m *  sizeof(selection));
+        char *filename = "/home/dycz0fx/results/auto/auto_tuned_bcast.bin";
+        FILE *file = fopen(filename, "r");
+        fread(cs->future_auto_tuned, sizeof(selection), cs->future_auto_tune_n * cs->future_auto_tune_c * cs->future_auto_tune_m, file);
+        fclose(file);
+    }
+    return OMPI_SUCCESS;
+}
 
 
 /*
@@ -95,6 +111,11 @@ mca_coll_future_component_t mca_coll_future_component = {
  */
 static int future_close(void)
 {
+    mca_coll_future_component_t *cs = &mca_coll_future_component;
+    if (cs->future_auto_tune && cs->future_auto_tuned != NULL){
+        free(cs->future_auto_tuned);
+        cs->future_auto_tuned = NULL;
+    }
     return OMPI_SUCCESS;
 }
 
@@ -107,11 +128,7 @@ static int future_register(void)
     mca_base_component_t *c = &mca_coll_future_component.super.collm_version;
     mca_coll_future_component_t *cs = &mca_coll_future_component;
     
-    /* If we want to be selected (i.e., all procs on one node), then
-     we should have a high priority */
-    
     cs->future_priority = 0;
-    
     (void) mca_base_component_var_register(c, "priority", "Priority of the future coll component",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
@@ -127,7 +144,7 @@ static int future_register(void)
                                            &coll_future_verbose);
     cs->future_output = opal_output_open(NULL);
     opal_output_set_verbosity(cs->future_output, coll_future_verbose);
-
+    
     cs->future_bcast_up_segsize = 65536;
     (void) mca_base_component_var_register(c, "bcast_up_segsize",
                                            "up level segment size for bcast",
@@ -144,6 +161,22 @@ static int future_register(void)
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_bcast_low_segsize);
     
+    cs->future_bcast_up_module = 0;
+    (void) mca_base_component_var_register(c, "bcast_up_module",
+                                           "up level module for bcast, 0 adapt",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_bcast_up_module);
+    
+    cs->future_bcast_low_module = 0;
+    (void) mca_base_component_var_register(c, "bcast_low_module",
+                                           "low level module for bcast, 0 shared, 1 sm",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_bcast_low_module);
+    
     cs->future_allreduce_segsize = 524288;
     (void) mca_base_component_var_register(c, "allreduce_segsize",
                                            "segment size for allreduce",
@@ -152,6 +185,103 @@ static int future_register(void)
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_allreduce_segsize);
 
+    cs->future_allreduce_up_module = 0;
+    (void) mca_base_component_var_register(c, "allreduce_up_module",
+                                           "up level module for allreduce, 0 adapt",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_allreduce_up_module);
+    
+    cs->future_allreduce_low_module = 0;
+    (void) mca_base_component_var_register(c, "allreduce_low_module",
+                                           "low level module for allreduce, 0 shared, 1 sm",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_allreduce_low_module);
+    
+    cs->future_allgather_up_module = 0;
+    (void) mca_base_component_var_register(c, "allgather_up_module",
+                                           "up level module for allgather, 0 adapt",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_allgather_up_module);
+    
+    cs->future_allgather_low_module = 0;
+    (void) mca_base_component_var_register(c, "allgather_low_module",
+                                           "low level module for allgather, 0 shared, 1 sm",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_allgather_low_module);
+    
+    cs->future_gather_up_module = 0;
+    (void) mca_base_component_var_register(c, "gather_up_module",
+                                           "up level module for gather, 0 adapt",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_gather_up_module);
+    
+    cs->future_gather_low_module = 0;
+    (void) mca_base_component_var_register(c, "gather_low_module",
+                                           "low level module for gather, 0 shared, 1 sm",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_gather_low_module);
+    
+    cs->future_scatter_up_module = 0;
+    (void) mca_base_component_var_register(c, "scatter_up_module",
+                                           "up level module for scatter, 0 adapt",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_scatter_up_module);
+    
+    cs->future_scatter_low_module = 0;
+    (void) mca_base_component_var_register(c, "scatter_low_module",
+                                           "low level module for scatter, 0 shared, 1 sm",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_scatter_low_module);
+    
+    cs->future_auto_tune = 0;
+    (void) mca_base_component_var_register(c, "auto_tune",
+                                           "whether enable auto tune, 0 disable, 1 enable, default 0",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_auto_tune);
+
+    cs->future_auto_tune_n = 6;
+    (void) mca_base_component_var_register(c, "auto_tune_n",
+                                           "auto tune n",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_auto_tune_n);
+    
+    cs->future_auto_tune_c = 4;
+    (void) mca_base_component_var_register(c, "auto_tune_c",
+                                           "auto tune c",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_auto_tune_c);
+
+    cs->future_auto_tune_m = 23;
+    (void) mca_base_component_var_register(c, "auto_tune_m",
+                                           "auto tune n",
+                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_auto_tune_m);
 
     return OMPI_SUCCESS;
 }
+
+
