@@ -52,8 +52,8 @@ mca_coll_future_allgather_intra(const void *sbuf, int scount,
     /* create the subcommunicators */
     mca_coll_future_module_t *future_module = (mca_coll_future_module_t *)module;
     mca_coll_future_comm_create(comm, future_module);
-    ompi_communicator_t *low_comm = future_module->cached_low_comm;
-    ompi_communicator_t *up_comm = future_module->cached_up_comm;
+    ompi_communicator_t *low_comm = future_module->cached_low_comms[mca_coll_future_component.future_allgather_low_module];
+    ompi_communicator_t *up_comm = future_module->cached_up_comms[mca_coll_future_component.future_allgather_up_module];
     int low_rank = ompi_comm_rank(low_comm);
 
     ompi_request_t *temp_request = NULL;

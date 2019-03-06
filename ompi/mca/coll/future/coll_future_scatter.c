@@ -22,8 +22,8 @@ ompi_coll_future_scatter_intra(const void *sbuf, int scount,
     /* create the subcommunicators */
     mca_coll_future_module_t *future_module = (mca_coll_future_module_t *)module;
     mca_coll_future_comm_create(comm, future_module);
-    ompi_communicator_t *low_comm = future_module->cached_low_comm;
-    ompi_communicator_t *up_comm = future_module->cached_up_comm;
+    ompi_communicator_t *low_comm = future_module->cached_low_comms[mca_coll_future_component.future_scatter_low_module];
+    ompi_communicator_t *up_comm = future_module->cached_up_comms[mca_coll_future_component.future_scatter_up_module];
     int *vranks = future_module->cached_vranks;
     int low_rank = ompi_comm_rank(low_comm);
     int low_size = ompi_comm_size(low_comm);

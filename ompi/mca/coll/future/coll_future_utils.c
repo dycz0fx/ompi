@@ -38,3 +38,36 @@ void mca_coll_future_get_ranks(int *vranks, int root, int low_size, int *root_lo
     *root_up_rank = vranks[root] / low_size;
     *root_low_rank = vranks[root] % low_size;
 }
+
+int future_auto_tuned_get_n(int n){
+    int avail[6] = {2, 4, 8, 16, 32, 64};
+    int i;
+    for (i=0; i<6; i++) {
+        if (avail[i] >= n) {
+            return i;
+        }
+    }
+    return i-1;
+}
+
+int future_auto_tuned_get_c(int c){
+    int avail[4] = {2, 4, 8, 12};
+    int i;
+    for (i=0; i<4; i++) {
+        if (avail[i] >= c) {
+            return i;
+        }
+    }
+    return i-1;
+}
+
+int future_auto_tuned_get_m(int m){
+    int avail[23] = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304};
+    int i;
+    for (i=0; i<23; i++) {
+        if (avail[i] >= m) {
+            return i;
+        }
+    }
+    return i-1;
+}

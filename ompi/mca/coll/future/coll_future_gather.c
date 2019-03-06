@@ -21,8 +21,8 @@ ompi_coll_future_gather_intra(const void *sbuf, int scount,
     /* create the subcommunicators */
     mca_coll_future_module_t *future_module = (mca_coll_future_module_t *)module;
     mca_coll_future_comm_create(comm, future_module);
-    ompi_communicator_t *low_comm = future_module->cached_low_comm;
-    ompi_communicator_t *up_comm = future_module->cached_up_comm;
+    ompi_communicator_t *low_comm = future_module->cached_low_comms[mca_coll_future_component.future_gather_low_module];
+    ompi_communicator_t *up_comm = future_module->cached_up_comms[mca_coll_future_component.future_gather_up_module];
     int *vranks = future_module->cached_vranks;
     int low_rank = ompi_comm_rank(low_comm);
     int low_size = ompi_comm_size(low_comm);
@@ -49,6 +49,7 @@ ompi_coll_future_gather_intra(const void *sbuf, int scount,
     char *reorder_buf = NULL;
     char *reorder_rbuf = NULL;
     ptrdiff_t rsize, rgap = 0, rextent;
+    ompi_datatype_type_extent(rdtype, &rextent);
     int *topo = mca_coll_future_topo_init(comm, future_module, 2);
     if (w_rank == root) {
         /* if the processes are mapped-by core, no need to reorder */
@@ -57,7 +58,6 @@ ompi_coll_future_gather_intra(const void *sbuf, int scount,
             reorder_rbuf = (char *)rbuf;
         }
         else {
-            ompi_datatype_type_extent(rdtype, &rextent);
             rsize = opal_datatype_span(&rdtype->super, (int64_t)rcount * w_size, &rgap);
             reorder_buf = (char *)malloc(rsize);        //TODO:free
             reorder_rbuf = reorder_buf - rgap;

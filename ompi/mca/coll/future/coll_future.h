@@ -38,8 +38,16 @@
 #include "ompi/mca/coll/base/coll_tags.h"
 #include "ompi/mca/coll/base/coll_base_functions.h"
 #include "coll_future_trigger.h"
+#include "ompi/mca/coll/adapt/coll_adapt.h"
 
 BEGIN_C_DECLS
+
+typedef struct {
+    int fs;
+    int us;
+    int lmod;
+    int alg;
+} selection;
 
 struct mca_bcast_argu_s {
     void *buff;
@@ -198,9 +206,39 @@ typedef struct mca_coll_future_component_t {
     uint32_t future_bcast_up_segsize;
     /* low level segment size for bcast */
     uint32_t future_bcast_low_segsize;
+    /* up level module for bcast */
+    uint32_t future_bcast_up_module;
+    /* low level module for bcast */
+    uint32_t future_bcast_low_module;
     /* segment size for allreduce */
     uint32_t future_allreduce_segsize;
-    
+    /* up level module for allreduce */
+    uint32_t future_allreduce_up_module;
+    /* low level module for allreduce */
+    uint32_t future_allreduce_low_module;
+    /* up level module for allgather */
+    uint32_t future_allgather_up_module;
+    /* low level module for allgather */
+    uint32_t future_allgather_low_module;
+    /* up level module for gather */
+    uint32_t future_gather_up_module;
+    /* low level module for gather */
+    uint32_t future_gather_low_module;
+    /* up level module for scatter */
+    uint32_t future_scatter_up_module;
+    /* low level module for scatter */
+    uint32_t future_scatter_low_module;
+    /* whether enable auto tune */
+    uint32_t future_auto_tune;
+    /* create a 3D array
+     * num_processes: 2 4 8 16 32 64 (6)
+     * num_core: 2 4 8 12 (4)
+     * message size: 1 - 4194304 (23)
+     */
+    int future_auto_tune_n;
+    int future_auto_tune_c;
+    int future_auto_tune_m;
+    selection *future_auto_tuned;
 } mca_coll_future_component_t;
 
 /** Coll future module */
@@ -212,8 +250,8 @@ typedef struct mca_coll_future_module_t {
     bool enabled;
     
     struct ompi_communicator_t *cached_comm;
-    struct ompi_communicator_t *cached_low_comm;
-    struct ompi_communicator_t *cached_up_comm;
+    struct ompi_communicator_t **cached_low_comms;
+    struct ompi_communicator_t **cached_up_comms;
     int *cached_vranks;
     int *cached_topo;
     bool is_mapbycore;
@@ -252,14 +290,20 @@ bool mca_coll_future_topo_is_mapbycore(int *topo, struct ompi_communicator_t *co
 int *mca_coll_future_topo_init(struct ompi_communicator_t *comm, mca_coll_future_module_t *future_module, int num_topo_level);
 void mca_coll_future_topo_print(int *topo, struct ompi_communicator_t *comm, int num_topo_level);
 
+/* Utils */
+void mca_coll_future_reset_seg_count(int *up_seg_count, int *low_seg_count, int *count);
+void mca_coll_future_get_ranks(int *vranks, int root, int low_size, int *root_low_rank, int *root_up_rank);
+int future_auto_tuned_get_n(int n);
+int future_auto_tuned_get_c(int c);
+int future_auto_tuned_get_m(int m);
+
+
 /* Bcast */
 int mca_coll_future_bcast_intra(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
 int mca_coll_future_bcast(void *bcast_argu);
 int mca_coll_future_nextbcast(void *bcast_next_argu);
 void mac_coll_future_set_bcast_argu(mca_bcast_argu_t *argu, void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, bool noop);
 void mac_coll_future_set_nextbcast_argu(mca_bcast_next_argu_t *argu, void *buff, int up_seg_count, int low_seg_count, struct ompi_datatype_t *dtype, int root_low_rank, int root_up_rank, struct ompi_communicator_t *up_comm, struct ompi_communicator_t *low_comm, int num_segments, int low_rank, int cur_seg, int w_rank, int last_seg_count);
-void mca_coll_future_reset_seg_count(int *up_seg_count, int *low_seg_count, int *count);
-void mca_coll_future_get_ranks(int *vranks, int root, int low_size, int *root_low_rank, int *root_up_rank);
 int
 mca_coll_future_bcast_intra_adapt(void *buff,
                                   int count,

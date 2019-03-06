@@ -82,8 +82,8 @@ static void mca_coll_future_module_construct(mca_coll_future_module_t *module)
     module->enabled = false;
     module->super.coll_module_disable = mca_coll_future_module_disable;
     module->cached_comm = NULL;
-    module->cached_low_comm = NULL;
-    module->cached_up_comm = NULL;
+    module->cached_low_comms = NULL;
+    module->cached_up_comms = NULL;
     module->cached_vranks = NULL;
     module->cached_topo = NULL;
     module->is_mapbycore = false;
@@ -95,13 +95,19 @@ static void mca_coll_future_module_construct(mca_coll_future_module_t *module)
 static void mca_coll_future_module_destruct(mca_coll_future_module_t *module)
 {
     module->enabled = false;
-    if (module->cached_low_comm != NULL) {
-        ompi_comm_free(&(module->cached_low_comm));
-        module->cached_low_comm = NULL;
+    if (module->cached_low_comms != NULL) {
+        ompi_comm_free(&(module->cached_low_comms[0]));
+        ompi_comm_free(&(module->cached_low_comms[1]));
+        module->cached_low_comms[0] = NULL;
+        module->cached_low_comms[1] = NULL;
+        free(module->cached_low_comms);
+        module->cached_low_comms = NULL;
     }
-    if (module->cached_up_comm != NULL) {
-        ompi_comm_free(&(module->cached_up_comm));
-        module->cached_up_comm = NULL;
+    if (module->cached_up_comms != NULL) {
+        ompi_comm_free(&(module->cached_up_comms[0]));
+        module->cached_up_comms[0] = NULL;
+        free(module->cached_up_comms);
+        module->cached_up_comms = NULL;
     }
     if (module->cached_vranks != NULL) {
         free(module->cached_vranks);
@@ -228,7 +234,7 @@ int future_request_free(ompi_request_t** request)
 
 void mca_coll_future_comm_create(struct ompi_communicator_t *comm, mca_coll_future_module_t *future_module){
     /* use cached communicators if possible */
-    if (future_module->cached_comm == comm && future_module->cached_low_comm != NULL && future_module->cached_up_comm != NULL && future_module->cached_vranks != NULL) {
+    if (future_module->cached_comm == comm && future_module->cached_low_comms != NULL && future_module->cached_up_comms != NULL && future_module->cached_vranks != NULL) {
         return;
     }
     /* create communicators if there is no cached communicator */
@@ -237,9 +243,9 @@ void mca_coll_future_comm_create(struct ompi_communicator_t *comm, mca_coll_futu
         int up_rank;
         int w_rank = ompi_comm_rank(comm);
         int w_size = ompi_comm_size(comm);
-        ompi_communicator_t *low_comm;
-        ompi_communicator_t *up_comm;
-        /* create low_comm which contain all the process on a node */
+        ompi_communicator_t **low_comms = (struct ompi_communicator_t **)malloc(sizeof(struct ompi_communicator_t *) * 2);
+        ompi_communicator_t **up_comms = (struct ompi_communicator_t **)malloc(sizeof(struct ompi_communicator_t *) * 1);
+        /* create low_comms which contain all the process on a node */
         const int *origin_priority = NULL;
         //const int *tmp = NULL;
         /* lower future module priority */
@@ -253,6 +259,8 @@ void mca_coll_future_comm_create(struct ompi_communicator_t *comm, mca_coll_futu
         mca_base_var_set_value(future_var_id, &tmp_future_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
         comm->c_coll->coll_allreduce = ompi_coll_base_allreduce_intra_recursivedoubling;
         comm->c_coll->coll_allgather = ompi_coll_base_allgather_intra_recursivedoubling;
+        
+        /* set up low_comms[0] with shared module */
         int var_id;
         int tmp_priority = 100;
         int tmp_origin = 0;
@@ -264,14 +272,26 @@ void mca_coll_future_comm_create(struct ompi_communicator_t *comm, mca_coll_futu
         mca_base_var_set_value(var_id, &tmp_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
         //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
         //printf("shared_priority after set %d %d\n", *tmp);
-        ompi_comm_split_type(comm, MPI_COMM_TYPE_SHARED, 0, (opal_info_t *)(&ompi_mpi_info_null), &low_comm);
+        ompi_comm_split_type(comm, MPI_COMM_TYPE_SHARED, 0, (opal_info_t *)(&ompi_mpi_info_null), &(low_comms[0]));
         mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
         //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
         //printf("[%d] shared_priority set back %d\n", w_rank, *tmp);
-        low_size = ompi_comm_size(low_comm);
-        low_rank = ompi_comm_rank(low_comm);
+        low_size = ompi_comm_size(low_comms[0]);
+        low_rank = ompi_comm_rank(low_comms[0]);
         
-        /* create up_comm which contain one process per node (across nodes) */
+        /* set up low_comms[1] with sm module */
+        mca_base_var_find_by_name("coll_sm_priority", &var_id);
+        mca_base_var_get_value(var_id, &origin_priority, NULL, NULL);
+        tmp_origin = *origin_priority;
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] sm_priority origin %d %d\n", w_rank, *origin_priority, tmp_origin));
+        mca_base_var_set_flag(var_id, MCA_BASE_VAR_FLAG_SETTABLE, true);
+        mca_base_var_set_value(var_id, &tmp_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
+        //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
+        //printf("sm_priority after set %d %d\n", *tmp);
+        ompi_comm_split_type(comm, MPI_COMM_TYPE_SHARED, 0, (opal_info_t *)(&ompi_mpi_info_null), &(low_comms[1]));
+        mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
+
+        /* create up_comms which contain one process per node (across nodes) */
         mca_base_var_find_by_name("coll_adapt_priority", &var_id);
         mca_base_var_get_value(var_id, &origin_priority, NULL, NULL);
         tmp_origin = *origin_priority;
@@ -280,19 +300,19 @@ void mca_coll_future_comm_create(struct ompi_communicator_t *comm, mca_coll_futu
         mca_base_var_set_value(var_id, &tmp_priority, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
         //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
         //printf("adapt_priority after set %d %d\n", *tmp);
-        ompi_comm_split(comm, low_rank, w_rank, &up_comm, false);
+        ompi_comm_split(comm, low_rank, w_rank, &(up_comms[0]), false);
         mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
         //mca_base_var_get_value(var_id, &tmp, NULL, NULL);
         //printf("[%d] adapt_priority set back %d\n", w_rank, *tmp);
-        up_rank = ompi_comm_rank(up_comm);
+        up_rank = ompi_comm_rank(up_comms[0]);
         
         int *vranks = malloc(sizeof(int) * w_size);
         /* do allgather to gather vrank from each process so every process will know other processes vrank*/
         int vrank = low_size * up_rank + low_rank;
         comm->c_coll->coll_allgather(&vrank, 1, MPI_INT, vranks, 1, MPI_INT, comm, comm->c_coll->coll_allgather_module);
         future_module->cached_comm = comm;
-        future_module->cached_low_comm = low_comm;
-        future_module->cached_up_comm = up_comm;
+        future_module->cached_low_comms = low_comms;
+        future_module->cached_up_comms = up_comms;
         future_module->cached_vranks = vranks;
         
         mca_base_var_set_value(future_var_id, &tmp_future_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
@@ -337,12 +357,12 @@ void mca_coll_future_topo_get(int *topo, struct ompi_communicator_t* comm, int n
     //set core id
     self_topo[1] = ompi_comm_rank(comm);
     
-    printf("[topo %d]: %d %d\n", ompi_comm_rank(comm), self_topo[0], self_topo[1]);
-    fflush(stdout);
+    //printf("[topo %d]: %d %d\n", ompi_comm_rank(comm), self_topo[0], self_topo[1]);
+    //fflush(stdout);
     //do allgather
     ompi_coll_base_allgather_intra_bruck(self_topo, num_topo_level, MPI_INT, topo, num_topo_level, MPI_INT, comm, comm->c_coll->coll_allgather_module);
-    printf("[topo %d]: after allgather\n", ompi_comm_rank(comm));
-    fflush(stdout);
+    //printf("[topo %d]: after allgather\n", ompi_comm_rank(comm));
+    //fflush(stdout);
     free(self_topo);
     return;
 }
@@ -386,9 +406,9 @@ void mca_coll_future_topo_sort(int *topo, int start, int end, int size, int leve
     //        printf("%d ", topo[i*num_topo_level+level]);
     //    }
     //    printf("\n");
-    int last;
-    int new_start;
-    int new_end;
+    int last = 0;
+    int new_start = 0;
+    int new_end = 0;
     for (i=start; i<=end; i++) {
         if (i == start) {
             last = topo[i*num_topo_level+level];
@@ -465,3 +485,4 @@ void mca_coll_future_topo_print(int *topo, struct ompi_communicator_t *comm, int
 
     }
 }
+
