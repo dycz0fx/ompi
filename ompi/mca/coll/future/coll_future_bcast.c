@@ -286,14 +286,14 @@ mca_coll_future_bcast_intra_adapt(void *buff,
     ompi_communicator_t *up_comm;
     /* auto tune is enabled */
     if (mca_coll_future_component.future_auto_tune && mca_coll_future_component.future_auto_tuned != NULL) {
-        int n = future_auto_tuned_get_n(ompi_comm_size(future_module->cached_up_comms[0]));
-        int c = future_auto_tuned_get_c(ompi_comm_size(future_module->cached_low_comms[0]));
-        int m = future_auto_tuned_get_m(typelng * count);
-        int id = n*mca_coll_future_component.future_auto_tune_c*mca_coll_future_component.future_auto_tune_m + c*mca_coll_future_component.future_auto_tune_m + m;
-        int fs = mca_coll_future_component.future_auto_tuned[id].fs;
-        int us = mca_coll_future_component.future_auto_tuned[id].us;
-        int lmod = mca_coll_future_component.future_auto_tuned[id].lmod;
-        int alg = mca_coll_future_component.future_auto_tuned[id].alg;
+        uint32_t n = future_auto_tuned_get_n(ompi_comm_size(future_module->cached_up_comms[0]));
+        uint32_t c = future_auto_tuned_get_c(ompi_comm_size(future_module->cached_low_comms[0]));
+        uint32_t m = future_auto_tuned_get_m(typelng * count);
+        uint32_t id = n*mca_coll_future_component.future_auto_tune_c*mca_coll_future_component.future_auto_tune_m + c*mca_coll_future_component.future_auto_tune_m + m;
+        uint32_t fs = mca_coll_future_component.future_auto_tuned[id].fs;
+        uint32_t us = mca_coll_future_component.future_auto_tuned[id].us;
+        uint32_t lmod = mca_coll_future_component.future_auto_tuned[id].lmod;
+        uint32_t alg = mca_coll_future_component.future_auto_tuned[id].alg;
         /* set up fs */
         COLL_BASE_COMPUTED_SEGCOUNT((size_t)fs, typelng, up_seg_count);
         low_seg_count = up_seg_count;
@@ -304,9 +304,6 @@ mca_coll_future_bcast_intra_adapt(void *buff,
         ((mca_coll_adapt_module_t *)(up_comm->c_coll->coll_ibcast_module))->adapt_component->adapt_ibcast_segment_size = us;
         /* set up alg */
         ((mca_coll_adapt_module_t *)(up_comm->c_coll->coll_ibcast_module))->adapt_component->adapt_ibcast_algorithm = alg;
-        if (w_rank == 0) {
-            printf("in future autotuned count %d: fs %d us %d lmod %d alg %d\n", count, fs, us, lmod, alg);
-        }
     }
     else {
         COLL_BASE_COMPUTED_SEGCOUNT(mca_coll_future_component.future_bcast_up_segsize, typelng, up_seg_count);
