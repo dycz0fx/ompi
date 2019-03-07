@@ -43,10 +43,10 @@
 BEGIN_C_DECLS
 
 typedef struct {
-    int fs;
-    int us;
-    int lmod;
-    int alg;
+    uint32_t fs;
+    uint32_t us;
+    uint32_t lmod;
+    uint32_t alg;
 } selection;
 
 struct mca_bcast_argu_s {
@@ -235,9 +235,9 @@ typedef struct mca_coll_future_component_t {
      * num_core: 2 4 8 12 (4)
      * message size: 1 - 4194304 (23)
      */
-    int future_auto_tune_n;
-    int future_auto_tune_c;
-    int future_auto_tune_m;
+    uint32_t future_auto_tune_n;
+    uint32_t future_auto_tune_c;
+    uint32_t future_auto_tune_m;
     selection *future_auto_tuned;
 } mca_coll_future_component_t;
 
@@ -293,9 +293,9 @@ void mca_coll_future_topo_print(int *topo, struct ompi_communicator_t *comm, int
 /* Utils */
 void mca_coll_future_reset_seg_count(int *up_seg_count, int *low_seg_count, int *count);
 void mca_coll_future_get_ranks(int *vranks, int root, int low_size, int *root_low_rank, int *root_up_rank);
-int future_auto_tuned_get_n(int n);
-int future_auto_tuned_get_c(int c);
-int future_auto_tuned_get_m(int m);
+uint32_t future_auto_tuned_get_n(uint32_t n);
+uint32_t future_auto_tuned_get_c(uint32_t c);
+uint32_t future_auto_tuned_get_m(uint32_t m);
 
 
 /* Bcast */
