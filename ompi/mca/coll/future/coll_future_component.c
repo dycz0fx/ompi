@@ -95,6 +95,9 @@ mca_coll_future_component_t mca_coll_future_component = {
  */
 static int future_open(void){
     mca_coll_future_component_t *cs = &mca_coll_future_component;
+    cs->future_task_list_enabled = 0;
+    cs->future_task_list = NULL;
+    cs->future_ongoing_tasks = 0;
     if (cs->future_auto_tune) {
         cs->future_auto_tuned = (selection *)malloc(cs->future_auto_tune_n * cs->future_auto_tune_c * cs->future_auto_tune_m *  sizeof(selection));
         char *filename = "/home/dycz0fx/results/auto/auto_tuned_bcast.bin";
@@ -115,6 +118,11 @@ static int future_close(void)
     if (cs->future_auto_tune && cs->future_auto_tuned != NULL){
         free(cs->future_auto_tuned);
         cs->future_auto_tuned = NULL;
+    }
+    if (NULL != cs->future_task_list) {
+        OBJ_RELEASE(cs->future_task_list);
+        cs->future_task_list = NULL;
+        cs->future_task_list_enabled = 0;
     }
     return OMPI_SUCCESS;
 }
@@ -180,15 +188,15 @@ static int future_register(void)
     cs->future_allreduce_segsize = 524288;
     (void) mca_base_component_var_register(c, "allreduce_segsize",
                                            "segment size for allreduce",
-                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_allreduce_segsize);
-
+    
     cs->future_allreduce_up_module = 0;
     (void) mca_base_component_var_register(c, "allreduce_up_module",
                                            "up level module for allreduce, 0 adapt",
-                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_allreduce_up_module);
@@ -196,7 +204,7 @@ static int future_register(void)
     cs->future_allreduce_low_module = 0;
     (void) mca_base_component_var_register(c, "allreduce_low_module",
                                            "low level module for allreduce, 0 shared, 1 sm",
-                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_allreduce_low_module);
@@ -204,7 +212,7 @@ static int future_register(void)
     cs->future_allgather_up_module = 0;
     (void) mca_base_component_var_register(c, "allgather_up_module",
                                            "up level module for allgather, 0 adapt",
-                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_allgather_up_module);
@@ -212,7 +220,7 @@ static int future_register(void)
     cs->future_allgather_low_module = 0;
     (void) mca_base_component_var_register(c, "allgather_low_module",
                                            "low level module for allgather, 0 shared, 1 sm",
-                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_allgather_low_module);
@@ -220,7 +228,7 @@ static int future_register(void)
     cs->future_gather_up_module = 0;
     (void) mca_base_component_var_register(c, "gather_up_module",
                                            "up level module for gather, 0 adapt",
-                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_gather_up_module);
@@ -228,7 +236,7 @@ static int future_register(void)
     cs->future_gather_low_module = 0;
     (void) mca_base_component_var_register(c, "gather_low_module",
                                            "low level module for gather, 0 shared, 1 sm",
-                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_gather_low_module);
@@ -236,7 +244,7 @@ static int future_register(void)
     cs->future_scatter_up_module = 0;
     (void) mca_base_component_var_register(c, "scatter_up_module",
                                            "up level module for scatter, 0 adapt",
-                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_scatter_up_module);
@@ -244,7 +252,7 @@ static int future_register(void)
     cs->future_scatter_low_module = 0;
     (void) mca_base_component_var_register(c, "scatter_low_module",
                                            "low level module for scatter, 0 shared, 1 sm",
-                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_scatter_low_module);
@@ -252,15 +260,15 @@ static int future_register(void)
     cs->future_auto_tune = 0;
     (void) mca_base_component_var_register(c, "auto_tune",
                                            "whether enable auto tune, 0 disable, 1 enable, default 0",
-                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_auto_tune);
-
+    
     cs->future_auto_tune_n = 6;
     (void) mca_base_component_var_register(c, "auto_tune_n",
                                            "auto tune n",
-                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_auto_tune_n);
@@ -268,20 +276,36 @@ static int future_register(void)
     cs->future_auto_tune_c = 4;
     (void) mca_base_component_var_register(c, "auto_tune_c",
                                            "auto tune c",
-                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_auto_tune_c);
-
+    
     cs->future_auto_tune_m = 23;
     (void) mca_base_component_var_register(c, "auto_tune_m",
-                                           "auto tune n",
-                                           MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
+                                           "auto tune m",
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_auto_tune_m);
-
+    
+    cs->future_max_tasks = 3;
+    (void) mca_base_component_var_register(c, "max_tasks",
+                                           "max_tasks must greater than 1",
+                                           MCA_BASE_VAR_TYPE_UNSIGNED_INT, NULL, 0, 0,
+                                           OPAL_INFO_LVL_9,
+                                           MCA_BASE_VAR_SCOPE_READONLY,
+                                           &cs->future_max_tasks);
+    
     return OMPI_SUCCESS;
 }
 
-
+void mca_coll_future_setup_list(void){
+    if (0 == mca_coll_future_component.future_task_list_enabled) {
+        int32_t t = opal_atomic_add_fetch_32(&(mca_coll_future_component.future_task_list_enabled), 1);
+        if (1 == t) {
+            mca_coll_future_component.future_task_list = OBJ_NEW(opal_list_t);
+        }
+    }
+    return;
+}

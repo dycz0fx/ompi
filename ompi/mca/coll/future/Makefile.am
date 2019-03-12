@@ -23,6 +23,7 @@
 sources = \
 coll_future.h \
 coll_future_trigger.h \
+coll_future_item.h \
 coll_future_bcast.c \
 coll_future_scatter.c \
 coll_future_gather.c \
@@ -31,7 +32,8 @@ coll_future_allgather.c \
 coll_future_component.c \
 coll_future_module.c \
 coll_future_trigger.c \
-coll_future_utils.c
+coll_future_utils.c \
+coll_future_item.c
 
 # Make the output library in this directory, and name it either
 # mca_<type>_<name>.la (for DSO builds) or libmca_<type>_<name>.la

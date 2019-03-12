@@ -39,7 +39,7 @@
 #include "ompi/mca/coll/base/coll_base_functions.h"
 #include "coll_future_trigger.h"
 #include "ompi/mca/coll/adapt/coll_adapt.h"
-
+#include "coll_future_item.h"
 BEGIN_C_DECLS
 
 typedef struct {
@@ -230,15 +230,18 @@ typedef struct mca_coll_future_component_t {
     uint32_t future_scatter_low_module;
     /* whether enable auto tune */
     uint32_t future_auto_tune;
-    /* create a 3D array
-     * num_processes: 2 4 8 16 32 64 (6)
-     * num_core: 2 4 8 12 (4)
-     * message size: 1 - 4194304 (23)
-     */
+    /* auto tune arguments */
     uint32_t future_auto_tune_n;
     uint32_t future_auto_tune_c;
     uint32_t future_auto_tune_m;
     selection *future_auto_tuned;
+    /* task list */
+    int32_t future_task_list_enabled;
+    opal_list_t *future_task_list;
+    /* ongoing tasks */
+    uint32_t future_ongoing_tasks;
+    /* max number of tasks */
+    uint32_t future_max_tasks;
 } mca_coll_future_component_t;
 
 /** Coll future module */
@@ -290,13 +293,15 @@ bool mca_coll_future_topo_is_mapbycore(int *topo, struct ompi_communicator_t *co
 int *mca_coll_future_topo_init(struct ompi_communicator_t *comm, mca_coll_future_module_t *future_module, int num_topo_level);
 void mca_coll_future_topo_print(int *topo, struct ompi_communicator_t *comm, int num_topo_level);
 
+/* Set up task list */
+void mca_coll_future_setup_list(void);
+
 /* Utils */
 void mca_coll_future_reset_seg_count(int *up_seg_count, int *low_seg_count, int *count);
 void mca_coll_future_get_ranks(int *vranks, int root, int low_size, int *root_low_rank, int *root_up_rank);
 uint32_t future_auto_tuned_get_n(uint32_t n);
 uint32_t future_auto_tuned_get_c(uint32_t c);
 uint32_t future_auto_tuned_get_m(uint32_t m);
-
 
 /* Bcast */
 int mca_coll_future_bcast_intra(void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, mca_coll_base_module_t *module);
@@ -330,23 +335,23 @@ int mca_coll_future_allreduce_ir_task(void *task_argu);
 int mca_coll_future_allreduce_ib_task(void *task_argu);
 int mca_coll_future_allreduce_sb_task(void *task_argu);
 void mac_coll_future_set_allreduce_argu(mca_allreduce_argu_t *argu,
-                              mca_coll_task_t *cur_task,
-                              void *sbuf,
-                              void *rbuf,
-                              int seg_count,
-                              struct ompi_datatype_t *dtype,
-                              struct ompi_op_t *op,
-                              int root_up_rank,
-                              int root_low_rank,
-                              struct ompi_communicator_t *up_comm,
-                              struct ompi_communicator_t *low_comm,
-                              int num_segments,
-                              int cur_seg,
-                              int w_rank,
-                              int last_seg_count,
-                              bool noop,
-                              ompi_request_t *req,
-                              int *completed);
+                                        mca_coll_task_t *cur_task,
+                                        void *sbuf,
+                                        void *rbuf,
+                                        int seg_count,
+                                        struct ompi_datatype_t *dtype,
+                                        struct ompi_op_t *op,
+                                        int root_up_rank,
+                                        int root_low_rank,
+                                        struct ompi_communicator_t *up_comm,
+                                        struct ompi_communicator_t *low_comm,
+                                        int num_segments,
+                                        int cur_seg,
+                                        int w_rank,
+                                        int last_seg_count,
+                                        bool noop,
+                                        ompi_request_t *req,
+                                        int *completed);
 
 /* Scatter */
 int

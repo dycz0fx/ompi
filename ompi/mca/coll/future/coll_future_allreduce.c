@@ -5,23 +5,23 @@
 #include "coll_future_trigger.h"
 
 void mac_coll_future_set_allreduce_argu(mca_allreduce_argu_t *argu,
-                              mca_coll_task_t *cur_task,
-                              void *sbuf,
-                              void *rbuf,
-                              int seg_count,
-                              struct ompi_datatype_t *dtype,
-                              struct ompi_op_t *op,
-                              int root_up_rank,
-                              int root_low_rank,
-                              struct ompi_communicator_t *up_comm,
-                              struct ompi_communicator_t *low_comm,
-                              int num_segments,
-                              int cur_seg,
-                              int w_rank,
-                              int last_seg_count,
-                              bool noop,
-                              ompi_request_t *req,
-                              int *completed){
+                                        mca_coll_task_t *cur_task,
+                                        void *sbuf,
+                                        void *rbuf,
+                                        int seg_count,
+                                        struct ompi_datatype_t *dtype,
+                                        struct ompi_op_t *op,
+                                        int root_up_rank,
+                                        int root_low_rank,
+                                        struct ompi_communicator_t *up_comm,
+                                        struct ompi_communicator_t *low_comm,
+                                        int num_segments,
+                                        int cur_seg,
+                                        int w_rank,
+                                        int last_seg_count,
+                                        bool noop,
+                                        ompi_request_t *req,
+                                        int *completed){
     argu->cur_task = cur_task;
     argu->sbuf = sbuf;
     argu->rbuf = rbuf;
@@ -62,13 +62,16 @@ mca_coll_future_allreduce_intra(const void *sbuf,
     
     OPAL_OUTPUT_VERBOSE((10, mca_coll_future_component.future_output, "In Future Allreduce seg_size %d seg_count %d count %d\n", mca_coll_future_component.future_allreduce_segsize, seg_count, count));
     int num_segments = (count + seg_count - 1) / seg_count;
-
+    
     /* create the subcommunicators */
     mca_coll_future_module_t *future_module = (mca_coll_future_module_t *)module;
     mca_coll_future_comm_create(comm, future_module);
     ompi_communicator_t *low_comm = future_module->cached_low_comms[mca_coll_future_component.future_allreduce_low_module];
     ompi_communicator_t *up_comm = future_module->cached_up_comms[mca_coll_future_component.future_allreduce_up_module];
     int low_rank = ompi_comm_rank(low_comm);
+    
+    //set up free list
+    mca_coll_future_setup_list();
     
     ompi_request_t *temp_request = NULL;
     //set up request
@@ -95,6 +98,7 @@ mca_coll_future_allreduce_intra(const void *sbuf,
     /* init sr task */
     init_task(sr, mca_coll_future_allreduce_sr_task, (void *)(sr_argu));
     /* issure sr task */
+    mca_coll_future_component.future_ongoing_tasks++;
     issue_task(sr);
     
     ompi_request_wait(&temp_request, MPI_STATUS_IGNORE);
@@ -105,11 +109,12 @@ mca_coll_future_allreduce_intra(const void *sbuf,
 int mca_coll_future_allreduce_sr_task(void *task_argu){
     mca_allreduce_argu_t *t = (mca_allreduce_argu_t *)task_argu;
     OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Allreduce:  sr %d r_buf %d\n", t->w_rank, t->cur_seg, ((int *)t->rbuf)[1]));
+
     OBJ_RELEASE(t->cur_task);
     ptrdiff_t extent, lb;
     ompi_datatype_get_extent(t->dtype, &lb, &extent);
     t->low_comm->c_coll->coll_reduce((char *)t->sbuf, (char *)t->rbuf, t->seg_count, t->dtype, t->op, t->root_low_rank, t->low_comm, t->low_comm->c_coll->coll_reduce_module);
-
+    
     /* create ir tasks for the current union segment */
     mca_coll_task_t *ir = OBJ_NEW(mca_coll_task_t);
     /* setup up ir task arguments */
@@ -128,7 +133,7 @@ int mca_coll_future_allreduce_sr_task(void *task_argu){
             mac_coll_future_set_allreduce_argu(sr_argu, sr, (char *)t->sbuf+extent*t->seg_count, (char *)t->rbuf+extent*t->seg_count, t->last_seg_count, t->dtype, t->op, (t->root_up_rank+0)%ompi_comm_size(t->up_comm), t->root_low_rank, t->up_comm, t->low_comm, t->num_segments, t->cur_seg+1, t->w_rank, t->last_seg_count, t->noop, t->req, t->completed);
         }
         else {
-            mac_coll_future_set_allreduce_argu(sr_argu, sr, (char *)t->sbuf+extent*t->seg_count, (char *)t->rbuf+extent*t->seg_count, t->seg_count, t->dtype, t->op, (t->root_up_rank+1)%ompi_comm_size(t->up_comm), t->root_low_rank, t->up_comm, t->low_comm, t->num_segments, t->cur_seg+1, t->w_rank, t->last_seg_count, t->noop, t->req, t->completed);
+            mac_coll_future_set_allreduce_argu(sr_argu, sr, (char *)t->sbuf+extent*t->seg_count, (char *)t->rbuf+extent*t->seg_count, t->seg_count, t->dtype, t->op, (t->root_up_rank+ompi_comm_size(t->up_comm)/2)%ompi_comm_size(t->up_comm), t->root_low_rank, t->up_comm, t->low_comm, t->num_segments, t->cur_seg+1, t->w_rank, t->last_seg_count, t->noop, t->req, t->completed);
         }
         /* init sr task */
         init_task(sr, mca_coll_future_allreduce_sr_task, (void *)(sr_argu));
@@ -139,9 +144,18 @@ int mca_coll_future_allreduce_sr_task(void *task_argu){
     
     /* issure sr task */
     if (sr != NULL) {
-        issue_task(sr);
+        if (mca_coll_future_component.future_ongoing_tasks <= mca_coll_future_component.future_max_tasks) {
+            mca_coll_future_component.future_ongoing_tasks++;
+            issue_task(sr);
+        }
+        else {
+            /* store sr to the future_task_list */
+            mca_coll_future_item_t *item = OBJ_NEW(mca_coll_future_item_t);
+            item->task = sr;
+            opal_list_append(mca_coll_future_component.future_task_list, (opal_list_item_t *)item);
+        }
     }
-
+    
     return OMPI_SUCCESS;
 }
 
@@ -185,7 +199,7 @@ int mca_coll_future_allreduce_ir_task(void *task_argu){
             t->up_comm->c_coll->coll_ireduce((char *)t->rbuf, (char *)t->rbuf, t->seg_count, t->dtype, t->op, t->root_up_rank, t->up_comm, &ireduce_req, t->up_comm->c_coll->coll_ireduce_module);
         }
         ompi_request_set_callback(ireduce_req, ireduce_cb, t);
-
+        
         return OMPI_SUCCESS;
     }
 }
@@ -238,6 +252,14 @@ int mca_coll_future_allreduce_sb_task(void *task_argu){
     ompi_datatype_get_extent(t->dtype, &lb, &extent);
     t->low_comm->c_coll->coll_bcast((char *)t->rbuf, t->seg_count, t->dtype, t->root_low_rank, t->low_comm, t->low_comm->c_coll->coll_bcast_module);
     
+    mca_coll_future_component.future_ongoing_tasks--;
+    /* issue sr task if the future_task_list is not empty */
+    if (!opal_list_is_empty(mca_coll_future_component.future_task_list)) {
+        mca_coll_future_item_t * item = (mca_coll_future_item_t *) opal_list_get_first(mca_coll_future_component.future_task_list);
+        mca_coll_future_component.future_ongoing_tasks++;
+        issue_task(item->task);
+    }
+    
     int total = opal_atomic_add_fetch_32(t->completed, 1);
     OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Allreduce:  sb %d total %d\n", t->w_rank, t->cur_seg, total));
     if (total == t->num_segments) {
@@ -250,6 +272,7 @@ int mca_coll_future_allreduce_sb_task(void *task_argu){
         ompi_request_complete(temp_req, 1);
         return OMPI_SUCCESS;
     }
-
+    
+    
     return OMPI_SUCCESS;
 }
