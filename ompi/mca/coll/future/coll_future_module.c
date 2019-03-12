@@ -185,7 +185,7 @@ mca_coll_future_comm_query(struct ompi_communicator_t *comm, int *priority)
     future_module->super.ft_event        = NULL;
     future_module->super.coll_allgather  = mca_coll_future_allgather_intra;
     future_module->super.coll_allgatherv = NULL;
-    future_module->super.coll_allreduce  = mca_coll_future_allreduce_intra;
+    future_module->super.coll_allreduce  = mca_coll_future_allreduce_intra_sync;
     future_module->super.coll_alltoall   = NULL;
     future_module->super.coll_alltoallv  = NULL;
     future_module->super.coll_alltoallw  = NULL;

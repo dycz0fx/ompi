@@ -347,6 +347,18 @@ void mac_coll_future_set_allreduce_argu(mca_allreduce_argu_t *argu,
                               bool noop,
                               ompi_request_t *req,
                               int *completed);
+int
+mca_coll_future_allreduce_intra_sync(const void *sbuf,
+                                     void *rbuf,
+                                     int count,
+                                     struct ompi_datatype_t *dtype,
+                                     struct ompi_op_t *op,
+                                     struct ompi_communicator_t *comm,
+                                     mca_coll_base_module_t *module);
+int mca_coll_future_allreduce_t0_task(void *task_argu);
+int mca_coll_future_allreduce_t1_task(void *task_argu);
+int mca_coll_future_allreduce_t2_task(void *task_argu);
+int mca_coll_future_allreduce_t3_task(void *task_argu);
 
 /* Scatter */
 int

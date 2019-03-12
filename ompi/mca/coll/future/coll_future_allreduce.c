@@ -41,6 +41,10 @@ void mac_coll_future_set_allreduce_argu(mca_allreduce_argu_t *argu,
     argu->completed = completed;
 }
 
+/*
+ * Async implementation of allreduce.
+ */
+ 
 int
 mca_coll_future_allreduce_intra(const void *sbuf,
                                 void *rbuf,
@@ -250,6 +254,234 @@ int mca_coll_future_allreduce_sb_task(void *task_argu){
         ompi_request_complete(temp_req, 1);
         return OMPI_SUCCESS;
     }
+    
+    return OMPI_SUCCESS;
+}
+
+int
+mca_coll_future_allreduce_intra_sync(const void *sbuf,
+                                     void *rbuf,
+                                     int count,
+                                     struct ompi_datatype_t *dtype,
+                                     struct ompi_op_t *op,
+                                     struct ompi_communicator_t *comm,
+                                     mca_coll_base_module_t *module){
+    ptrdiff_t extent, lb;
+    ompi_datatype_get_extent(dtype, &lb, &extent);
+    int w_rank;
+    w_rank = ompi_comm_rank(comm);
+    
+    /* Determine number of elements sent per task. */
+    int seg_count = count;
+    size_t typelng;
+    ompi_datatype_type_size(dtype, &typelng);
+    COLL_BASE_COMPUTED_SEGCOUNT(mca_coll_future_component.future_allreduce_segsize, typelng, seg_count);
+    OPAL_OUTPUT_VERBOSE((10, mca_coll_future_component.future_output, "In Future Allreduce seg_size %d seg_count %d count %d\n", mca_coll_future_component.future_allreduce_segsize, seg_count, count));
+    int num_segments = (count + seg_count - 1) / seg_count;
+    
+    /* create the subcommunicators */
+    mca_coll_future_module_t *future_module = (mca_coll_future_module_t *)module;
+    mca_coll_future_comm_create(comm, future_module);
+    ompi_communicator_t *low_comm = future_module->cached_low_comms[mca_coll_future_component.future_allreduce_low_module];
+    ompi_communicator_t *up_comm = future_module->cached_up_comms[mca_coll_future_component.future_allreduce_up_module];
+    int low_rank = ompi_comm_rank(low_comm);
+    
+    int root_up_rank = 0;
+    int root_low_rank = 0;
+    /* create t0 task for the first union segment */
+    mca_coll_task_t *t0 = OBJ_NEW(mca_coll_task_t);
+    /* setup up t0 task arguments */
+    int *completed = (int *)malloc(sizeof(int));
+    completed[0] = 0;
+    mca_allreduce_argu_t *t0_argu = malloc(sizeof(mca_allreduce_argu_t));
+    mac_coll_future_set_allreduce_argu(t0_argu, t0, (char *)sbuf, (char *)rbuf, seg_count, dtype, op, root_up_rank, root_low_rank, up_comm, low_comm, num_segments, 0, w_rank, count-(num_segments-1)*seg_count, low_rank!=root_low_rank, NULL, completed);
+    /* init t0 task */
+    init_task(t0, mca_coll_future_allreduce_t0_task, (void *)(t0_argu));
+    /* issure sr task */
+    issue_task(t0);
+    
+    return OMPI_SUCCESS;
+}
+
+/* t0 task */
+int mca_coll_future_allreduce_t0_task(void *task_argu){
+    mca_allreduce_argu_t *t = (mca_allreduce_argu_t *)task_argu;
+    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Allreduce:  t0 %d r_buf %d\n", t->w_rank, t->cur_seg, ((int *)t->rbuf)[1]));
+    OBJ_RELEASE(t->cur_task);
+    ptrdiff_t extent, lb;
+    ompi_datatype_get_extent(t->dtype, &lb, &extent);
+    t->low_comm->c_coll->coll_reduce((char *)t->sbuf, (char *)t->rbuf, t->seg_count, t->dtype, t->op, t->root_low_rank, t->low_comm, t->low_comm->c_coll->coll_reduce_module);
+    
+    /* create t1 tasks for the current union segment */
+    mca_coll_task_t *t1 = OBJ_NEW(mca_coll_task_t);
+    /* setup up t1 task arguments */
+    t->cur_task = t1;
+    /* init t1 task */
+    init_task(t1, mca_coll_future_allreduce_t1_task, (void *)t);
+    /* issue t1 task */
+    issue_task(t1);
+    return OMPI_SUCCESS;
+}
+
+/* t1 task */
+int mca_coll_future_allreduce_t1_task(void *task_argu){
+    mca_allreduce_argu_t *t = (mca_allreduce_argu_t *)task_argu;
+    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Allreduce:  t1 %d r_buf %d\n", t->w_rank, t->cur_seg, ((int *)t->rbuf)[1]));
+    OBJ_RELEASE(t->cur_task);
+    ptrdiff_t extent, lb;
+    ompi_datatype_get_extent(t->dtype, &lb, &extent);
+    ompi_request_t *ireduce_req;
+    int tmp_count = t->seg_count;
+    if (!t->noop) {
+        int up_rank = ompi_comm_rank(t->up_comm);
+        /* ir of cur_seg */
+        if (up_rank == t->root_up_rank) {
+            t->up_comm->c_coll->coll_ireduce(MPI_IN_PLACE, (char *)t->rbuf, t->seg_count, t->dtype, t->op, t->root_up_rank, t->up_comm, &ireduce_req, t->up_comm->c_coll->coll_ireduce_module);
+        }
+        else{
+            t->up_comm->c_coll->coll_ireduce((char *)t->rbuf, (char *)t->rbuf, t->seg_count, t->dtype, t->op, t->root_up_rank, t->up_comm, &ireduce_req, t->up_comm->c_coll->coll_ireduce_module);
+        }
+    }
+    /* sr of cur_seg+1 */
+    if (t->cur_seg <= t->num_segments-2) {
+        if (t->cur_seg == t->num_segments-2 && t->last_seg_count != t->seg_count) {
+            tmp_count = t->last_seg_count;
+        }
+        t->low_comm->c_coll->coll_reduce((char *)t->sbuf+extent*t->seg_count, (char *)t->rbuf+extent*t->seg_count, tmp_count, t->dtype, t->op, t->root_low_rank, t->low_comm, t->low_comm->c_coll->coll_reduce_module);
+
+    }
+    if (!t->noop) {
+        ompi_request_wait(&ireduce_req, MPI_STATUSES_IGNORE);
+    }
+
+    /* create t2 tasks for the current union segment */
+    mca_coll_task_t *t2 = OBJ_NEW(mca_coll_task_t);
+    /* setup up t2 task arguments */
+    t->cur_task = t2;
+    /* init t2 task */
+    init_task(t2, mca_coll_future_allreduce_t2_task, (void *)t);
+    issue_task(t2);
 
     return OMPI_SUCCESS;
+}
+
+/* t2 task */
+int mca_coll_future_allreduce_t2_task(void *task_argu){
+    mca_allreduce_argu_t *t = (mca_allreduce_argu_t *)task_argu;
+    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Allreduce:  t2 %d r_buf %d\n", t->w_rank, t->cur_seg, ((int *)t->rbuf)[1]));
+    OBJ_RELEASE(t->cur_task);
+    ptrdiff_t extent, lb;
+    ompi_datatype_get_extent(t->dtype, &lb, &extent);
+    ompi_request_t *reqs[2];
+    int tmp_count = t->seg_count;
+    if (!t->noop) {
+        int up_rank = ompi_comm_rank(t->up_comm);
+        /* ib of cur_seg */
+        t->up_comm->c_coll->coll_ibcast((char *)t->rbuf, t->seg_count, t->dtype, t->root_up_rank, t->up_comm, &(reqs[0]), t->up_comm->c_coll->coll_ibcast_module);
+        /* ir of cur_seg+1 */
+        if (t->cur_seg <= t->num_segments-2) {
+            if (t->cur_seg == t->num_segments-2 && t->last_seg_count != t->seg_count) {
+                tmp_count = t->last_seg_count;
+            }
+            if (up_rank == t->root_up_rank) {
+                t->up_comm->c_coll->coll_ireduce(MPI_IN_PLACE, (char *)t->rbuf+extent*t->seg_count, tmp_count, t->dtype, t->op, t->root_up_rank, t->up_comm, &(reqs[1]), t->up_comm->c_coll->coll_ireduce_module);
+            }
+            else{
+                t->up_comm->c_coll->coll_ireduce((char *)t->rbuf+extent*t->seg_count, (char *)t->rbuf+extent*t->seg_count, tmp_count, t->dtype, t->op, t->root_up_rank, t->up_comm, &(reqs[1]), t->up_comm->c_coll->coll_ireduce_module);
+            }
+        }
+    }
+    /* sr of cur_seg+2 */
+    if (t->cur_seg <= t->num_segments-3) {
+        if (t->cur_seg == t->num_segments-3 && t->last_seg_count != t->seg_count) {
+            tmp_count = t->last_seg_count;
+        }
+        t->low_comm->c_coll->coll_reduce((char *)t->sbuf+2*extent*t->seg_count, (char *)t->rbuf+2*extent*t->seg_count, tmp_count, t->dtype, t->op, t->root_low_rank, t->low_comm, t->low_comm->c_coll->coll_reduce_module);
+    }
+    if (!t->noop) {
+        ompi_request_wait_all(2, reqs, MPI_STATUSES_IGNORE);
+    }
+    
+    /* create t3 tasks for the current union segment */
+    mca_coll_task_t *t3 = OBJ_NEW(mca_coll_task_t);
+    /* setup up t3 task arguments */
+    t->cur_task = t3;
+    /* init t3 task */
+    init_task(t3, mca_coll_future_allreduce_t3_task, (void *)t);
+    issue_task(t3);
+    
+    return OMPI_SUCCESS;
+}
+
+/* t3 task */
+int mca_coll_future_allreduce_t3_task(void *task_argu){
+    mca_allreduce_argu_t *t = (mca_allreduce_argu_t *)task_argu;
+    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Allreduce:  t3 %d r_buf %d\n", t->w_rank, t->cur_seg, ((int *)t->rbuf)[1]));
+    OBJ_RELEASE(t->cur_task);
+    ptrdiff_t extent, lb;
+    ompi_datatype_get_extent(t->dtype, &lb, &extent);
+    ompi_request_t *reqs[2];
+    int tmp_count = t->seg_count;
+    if (!t->noop) {
+        int up_rank = ompi_comm_rank(t->up_comm);
+        /* ib of cur_seg+1 */
+        if (t->cur_seg <= t->num_segments-2) {
+            if (t->cur_seg == t->num_segments-2 && t->last_seg_count != t->seg_count) {
+                tmp_count = t->last_seg_count;
+            }
+            t->up_comm->c_coll->coll_ibcast((char *)t->rbuf+extent*t->seg_count, t->seg_count, t->dtype, t->root_up_rank, t->up_comm, &(reqs[0]), t->up_comm->c_coll->coll_ibcast_module);
+        }
+        /* ir of cur_seg+2 */
+        if (t->cur_seg <= t->num_segments-3) {
+            if (t->cur_seg == t->num_segments-3 && t->last_seg_count != t->seg_count) {
+                tmp_count = t->last_seg_count;
+            }
+            if (up_rank == t->root_up_rank) {
+                t->up_comm->c_coll->coll_ireduce(MPI_IN_PLACE, (char *)t->rbuf+2*extent*t->seg_count, tmp_count, t->dtype, t->op, t->root_up_rank, t->up_comm, &(reqs[1]), t->up_comm->c_coll->coll_ireduce_module);
+            }
+            else{
+                t->up_comm->c_coll->coll_ireduce((char *)t->rbuf+2*extent*t->seg_count, (char *)t->rbuf+2*extent*t->seg_count, tmp_count, t->dtype, t->op, t->root_up_rank, t->up_comm, &(reqs[1]), t->up_comm->c_coll->coll_ireduce_module);
+            }
+        }
+    }
+    /* sr of cur_seg+3 */
+    if (t->cur_seg <= t->num_segments-4) {
+        if (t->cur_seg == t->num_segments-4 && t->last_seg_count != t->seg_count) {
+            tmp_count = t->last_seg_count;
+        }
+        t->low_comm->c_coll->coll_reduce((char *)t->sbuf+3*extent*t->seg_count, (char *)t->rbuf+3*extent*t->seg_count, tmp_count, t->dtype, t->op, t->root_low_rank, t->low_comm, t->low_comm->c_coll->coll_reduce_module);
+    }
+    /* sb of cur_seg */
+    t->low_comm->c_coll->coll_bcast((char *)t->rbuf, t->seg_count, t->dtype, t->root_low_rank, t->low_comm, t->low_comm->c_coll->coll_bcast_module);
+    if (!t->noop) {
+        ompi_request_wait_all(2, reqs, MPI_STATUSES_IGNORE);
+    }
+    
+    int total = opal_atomic_add_fetch_32(t->completed, 1);
+    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Allreduce:  t3 %d total %d\n", t->w_rank, t->cur_seg, total));
+    if (total == t->num_segments) {
+        ompi_request_t *temp_req = t->req;
+        if (t->completed != NULL) {
+            free(t->completed);
+            t->completed = NULL;
+        }
+        free(t);
+        ompi_request_complete(temp_req, 1);
+    }
+    else {
+        /* create t3 tasks for the current union segment */
+        mca_coll_task_t *t3 = OBJ_NEW(mca_coll_task_t);
+        /* setup up t3 task arguments */
+        t->cur_task = t3;
+        t->sbuf = (char *)t->sbuf+extent*t->seg_count;
+        t->rbuf = (char *)t->rbuf+extent*t->seg_count;
+        t->cur_seg = t->cur_seg + 1;
+        /* init t3 task */
+        init_task(t3, mca_coll_future_allreduce_t3_task, (void *)t);
+        issue_task(t3);
+    }
+    
+    return OMPI_SUCCESS;
+    
+    
 }
