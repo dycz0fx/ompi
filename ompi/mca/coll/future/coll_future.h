@@ -88,6 +88,7 @@ struct mca_bcast_first_argu_s {
 typedef struct mca_bcast_first_argu_s mca_bcast_first_argu_t;
 
 struct mca_bcast_mid_argu_s {
+    mca_coll_task_t *cur_task;
     void *buff;
     int up_seg_count;
     int low_seg_count;
@@ -312,9 +313,18 @@ mca_coll_future_bcast_intra_adapt(void *buff,
                                   struct ompi_communicator_t *comm,
                                   mca_coll_base_module_t *module);
 void mac_coll_future_set_first_argu(mca_bcast_first_argu_t *argu, void *buff, int count, struct ompi_datatype_t *dtype, int root, struct ompi_communicator_t *comm, int num, bool noop);
-void mac_coll_future_set_mid_argu(mca_bcast_mid_argu_t *argu, void *buff, int up_seg_count, int low_seg_count, struct ompi_datatype_t *dtype, int root_low_rank, int root_up_rank, struct ompi_communicator_t *up_comm, struct ompi_communicator_t *low_comm, int up_num, int low_num, int num_segments, int cur_seg, int w_rank, int last_seg_count, bool noop);
+void mac_coll_future_set_mid_argu(mca_bcast_mid_argu_t *argu, mca_coll_task_t *cur_task, void *buff, int up_seg_count, int low_seg_count, struct ompi_datatype_t *dtype, int root_up_rank, int root_low_rank, struct ompi_communicator_t *up_comm, struct ompi_communicator_t *low_comm, int up_num, int low_num, int num_segments, int cur_seg, int w_rank, int last_seg_count, bool noop);
 int mca_coll_future_first_task(void *task_argu);
 int mca_coll_future_mid_task(void *task_argu);
+int
+mca_coll_future_bcast_intra_sync(void *buff,
+                                 int count,
+                                 struct ompi_datatype_t *dtype,
+                                 int root,
+                                 struct ompi_communicator_t *comm,
+                                 mca_coll_base_module_t *module);
+int mca_coll_future_bcast_t0_task(void *task_argu);
+int mca_coll_future_bcast_t1_task(void *task_argu);
 
 /* Allreduce */
 int
