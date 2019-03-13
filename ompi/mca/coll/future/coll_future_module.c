@@ -190,7 +190,7 @@ mca_coll_future_comm_query(struct ompi_communicator_t *comm, int *priority)
     future_module->super.coll_alltoallv  = NULL;
     future_module->super.coll_alltoallw  = NULL;
     future_module->super.coll_barrier    = NULL;
-    future_module->super.coll_bcast      = mca_coll_future_bcast_intra_adapt;
+    future_module->super.coll_bcast      = mca_coll_future_bcast_intra_sync;
     future_module->super.coll_exscan     = NULL;
     future_module->super.coll_gather     = ompi_coll_future_gather_intra;
     future_module->super.coll_gatherv    = NULL;
@@ -316,7 +316,7 @@ void mca_coll_future_comm_create(struct ompi_communicator_t *comm, mca_coll_futu
         future_module->cached_vranks = vranks;
         
         mca_base_var_set_value(future_var_id, &tmp_future_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
-        comm->c_coll->coll_allreduce = mca_coll_future_allreduce_intra;
+        comm->c_coll->coll_allreduce = mca_coll_future_allreduce_intra_sync;
         comm->c_coll->coll_allgather = mca_coll_future_allgather_intra;
     }
 }
