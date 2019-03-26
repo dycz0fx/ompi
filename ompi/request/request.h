@@ -458,7 +458,11 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
         request->req_complete_cb = NULL;
         rc = temp( request );
         if (rc >= 1) {
-            OPAL_THREAD_UNLOCK(&(request->req_lock));
+            /*
+             * The callback routine succeeded: in that case it has released
+             * the req_lock and freed the request.
+             * ==> No need to do it here.
+             */
             return rc;
         }
     }
@@ -501,7 +505,11 @@ static inline int ompi_request_set_callback(ompi_request_t* request,
         request->req_complete_cb = NULL;
         rc = temp( request );
         if (rc >= 1) {
-            OPAL_THREAD_UNLOCK(&(request->req_lock));
+            /*
+             * The callback routine succeeded: in that case it has released
+             * the req_lock and freed the request.
+             * ==> No need to do it here.
+             */
             return rc;
         }
     }

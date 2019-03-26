@@ -103,6 +103,10 @@ static int ibcast_request_fini(mca_coll_adapt_bcast_context_t *context)
 }
 
 /* send call back */
+/*
+ * The req_lock is held when entering this routine
+ * It is released in this routine if no error occured
+ */
 static int send_cb(ompi_request_t *req)
 {
     mca_coll_adapt_bcast_context_t *context = (mca_coll_adapt_bcast_context_t *) req->req_complete_cb_data;
@@ -137,6 +141,11 @@ static int send_cb(ompi_request_t *req)
         OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output, "[%d]: Send(start in send cb): segment %d to %d at buff %p send_count %d tag %d\n", ompi_comm_rank(send_context->con->comm), send_context->frag_id, send_context->peer, (void *)send_context->buff, send_count, (send_context->con->ibcast_tag << 16) + new_id));
         err = MCA_PML_CALL(isend(send_buff, send_count, send_context->con->datatype, send_context->peer, (send_context->con->ibcast_tag << 16) + new_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
         if (MPI_SUCCESS != err) {
+            OPAL_THREAD_UNLOCK(context->con->mutex);
+            /*
+             * No need to unlock the req_lock in case of error:
+             * this is done in the calling routine
+             */
             return err;
         }
         //invoke send call back
@@ -168,6 +177,10 @@ static int send_cb(ompi_request_t *req)
 }
 
 //receive call back
+/*
+ * The req_lock is held when entering this routine
+ * It is released in this routine if no error occured
+ */
 static int recv_cb(ompi_request_t *req){
     //get necessary info from request
     mca_coll_adapt_bcast_context_t *context = (mca_coll_adapt_bcast_context_t *) req->req_complete_cb_data;
@@ -228,6 +241,7 @@ static int recv_cb(ompi_request_t *req){
             OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output, "[%d]: Send(start in recv cb): segment %d to %d at buff %p send_count %d tag %d\n", ompi_comm_rank(send_context->con->comm), send_context->frag_id, send_context->peer, (void *)send_context->buff, send_count, (send_context->con->ibcast_tag << 16) + send_context->frag_id));
             err = MCA_PML_CALL(isend(send_buff, send_count, send_context->con->datatype, send_context->peer, (send_context->con->ibcast_tag << 16) + send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
             if (MPI_SUCCESS != err) {
+                OPAL_THREAD_UNLOCK(context->con->mutex);
                 return err;
             }
             //invoke send call back
