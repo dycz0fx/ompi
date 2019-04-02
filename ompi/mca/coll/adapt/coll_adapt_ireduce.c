@@ -192,7 +192,12 @@ static int ireduce_request_fini(mca_coll_adapt_reduce_context_t *context)
     return OMPI_SUCCESS;
 }
 
-static int send_cb(ompi_request_t *req){
+/*
+ * The req_lock is held when entering this routine
+ * It is released in this routine if no error occured
+ */
+static int send_cb(ompi_request_t *req)
+{
     mca_coll_adapt_reduce_context_t *context = (mca_coll_adapt_reduce_context_t *) req->req_complete_cb_data;
     OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output, "[%d]: ireduce_send_cb, peer %d, seg_id %d\n", context->con->rank, context->peer, context->frag_id));
     int err;
@@ -232,6 +237,10 @@ static int send_cb(ompi_request_t *req){
         ompi_request_t *send_req;
         err = MCA_PML_CALL(isend(send_context->buff, send_count, send_context->con->datatype, send_context->peer, (context->con->ireduce_tag << 16) + send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
         if (MPI_SUCCESS != err) {
+            /*
+             * No need to unlock the req_lock in case of error:
+             * this is done in the calling routine
+             */
             return err;
         }
 
@@ -256,12 +265,17 @@ static int send_cb(ompi_request_t *req){
         OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output,"return context_list\n"));
         opal_free_list_return(mca_coll_adapt_component.adapt_ireduce_context_free_list, (opal_free_list_item_t*)context);
     }
-    OPAL_THREAD_UNLOCK(req->req_lock);
+    OPAL_THREAD_UNLOCK(&(req->req_lock));
     req->req_free(&req);
     return 1;
 }
 
-static int recv_cb(ompi_request_t *req){
+/*
+ * The req_lock is held when entering this routine
+ * It is released in this routine if no error occured
+ */
+static int recv_cb(ompi_request_t *req)
+{
     mca_coll_adapt_reduce_context_t *context = (mca_coll_adapt_reduce_context_t *) req->req_complete_cb_data;
     OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output, "[%d]: ireduce_recv_cb, peer %d, seg_id %d\n", context->con->rank, context->peer, context->frag_id));
         
@@ -299,6 +313,10 @@ static int recv_cb(ompi_request_t *req){
         ompi_request_t *recv_req;
         err = MCA_PML_CALL(irecv(temp_recv_buf, recv_count, recv_context->con->datatype, recv_context->peer, (recv_context->con->ireduce_tag << 16) + recv_context->frag_id, recv_context->con->comm, &recv_req));
         if (MPI_SUCCESS != err) {
+            /*
+             * No need to unlock the req_lock in case of error:
+             * this is done in the calling routine
+             */
             return err;
         }
         //invoke recvive call back
@@ -381,6 +399,10 @@ static int recv_cb(ompi_request_t *req){
             ompi_request_t *send_req;
             err = MCA_PML_CALL(isend(send_context->buff, send_count, send_context->con->datatype, send_context->peer, (send_context->con->ireduce_tag << 16) + send_context->frag_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
             if (MPI_SUCCESS != err) {
+                /*
+                 * No need to unlock the req_lock in case of error:
+                 * this is done in the calling routine
+                 */
                 return err;
             }
             //release the item
@@ -413,7 +435,7 @@ static int recv_cb(ompi_request_t *req){
         OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output, "[%d]: return context_list", context->con->rank));
         opal_free_list_return(mca_coll_adapt_component.adapt_ireduce_context_free_list, (opal_free_list_item_t*)context);
     }
-    OPAL_THREAD_UNLOCK(req->req_lock);
+    OPAL_THREAD_UNLOCK(&(req->req_lock));
     req->req_free(&req);
     return 1;
 }
