@@ -163,7 +163,7 @@ static int future_register(void)
     
     cs->future_bcast_up_module = 0;
     (void) mca_base_component_var_register(c, "bcast_up_module",
-                                           "up level module for bcast, 0 adapt",
+                                           "up level module for bcast, 0 libnbc, 1 adapt",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
@@ -171,7 +171,7 @@ static int future_register(void)
     
     cs->future_bcast_low_module = 0;
     (void) mca_base_component_var_register(c, "bcast_low_module",
-                                           "low level module for bcast, 0 shared, 1 sm",
+                                           "low level module for bcast, 0 sm, 1 shared",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
@@ -187,7 +187,7 @@ static int future_register(void)
 
     cs->future_allreduce_up_module = 0;
     (void) mca_base_component_var_register(c, "allreduce_up_module",
-                                           "up level module for allreduce, 0 adapt",
+                                           "up level module for allreduce, 0 libnbc, 1 adapt",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
@@ -195,7 +195,7 @@ static int future_register(void)
     
     cs->future_allreduce_low_module = 0;
     (void) mca_base_component_var_register(c, "allreduce_low_module",
-                                           "low level module for allreduce, 0 shared, 1 sm",
+                                           "low level module for allreduce, 0 sm, 1 shared",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
@@ -203,7 +203,7 @@ static int future_register(void)
     
     cs->future_allgather_up_module = 0;
     (void) mca_base_component_var_register(c, "allgather_up_module",
-                                           "up level module for allgather, 0 adapt",
+                                           "up level module for allgather, 0 libnbc, 1 adapt",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
@@ -211,7 +211,7 @@ static int future_register(void)
     
     cs->future_allgather_low_module = 0;
     (void) mca_base_component_var_register(c, "allgather_low_module",
-                                           "low level module for allgather, 0 shared, 1 sm",
+                                           "low level module for allgather, 0 sm, 1 shared",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
@@ -219,7 +219,7 @@ static int future_register(void)
     
     cs->future_gather_up_module = 0;
     (void) mca_base_component_var_register(c, "gather_up_module",
-                                           "up level module for gather, 0 adapt",
+                                           "up level module for gather, 0 libnbc, 1 adapt",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
@@ -227,7 +227,7 @@ static int future_register(void)
     
     cs->future_gather_low_module = 0;
     (void) mca_base_component_var_register(c, "gather_low_module",
-                                           "low level module for gather, 0 shared, 1 sm",
+                                           "low level module for gather, 0 sm, 1 shared",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
@@ -235,7 +235,7 @@ static int future_register(void)
     
     cs->future_scatter_up_module = 0;
     (void) mca_base_component_var_register(c, "scatter_up_module",
-                                           "up level module for scatter, 0 adapt",
+                                           "up level module for scatter, 0 libnbc, 1 adapt",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
@@ -243,7 +243,7 @@ static int future_register(void)
     
     cs->future_scatter_low_module = 0;
     (void) mca_base_component_var_register(c, "scatter_low_module",
-                                           "low level module for scatter, 0 shared, 1 sm",
+                                           "low level module for scatter, 0 sm, 1 shared",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
