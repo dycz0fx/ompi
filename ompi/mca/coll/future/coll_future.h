@@ -43,10 +43,11 @@
 BEGIN_C_DECLS
 
 typedef struct {
-    uint32_t fs;
-    uint32_t us;
+    uint32_t umod;
     uint32_t lmod;
-    uint32_t alg;
+    uint32_t fs;
+    uint32_t ualg;
+    uint32_t us;
 } selection;
 
 struct mca_bcast_argu_s {
