@@ -286,34 +286,38 @@ mca_coll_future_bcast_intra_adapt(void *buff,
     mca_coll_future_comm_create(comm, future_module);
     ompi_communicator_t *low_comm;
     ompi_communicator_t *up_comm;
+    
     /* auto tune is enabled */
     if (mca_coll_future_component.future_auto_tune && mca_coll_future_component.future_auto_tuned != NULL) {
         uint32_t n = future_auto_tuned_get_n(ompi_comm_size(future_module->cached_up_comms[0]));
         uint32_t c = future_auto_tuned_get_c(ompi_comm_size(future_module->cached_low_comms[0]));
         uint32_t m = future_auto_tuned_get_m(typelng * count);
         uint32_t id = n*mca_coll_future_component.future_auto_tune_c*mca_coll_future_component.future_auto_tune_m + c*mca_coll_future_component.future_auto_tune_m + m;
-        uint32_t fs = mca_coll_future_component.future_auto_tuned[id].fs;
-        uint32_t us = mca_coll_future_component.future_auto_tuned[id].us;
+        uint32_t umod = mca_coll_future_component.future_auto_tuned[id].umod;
         uint32_t lmod = mca_coll_future_component.future_auto_tuned[id].lmod;
-        uint32_t alg = mca_coll_future_component.future_auto_tuned[id].alg;
+        uint32_t fs = mca_coll_future_component.future_auto_tuned[id].fs;
+        uint32_t ualg = mca_coll_future_component.future_auto_tuned[id].ualg;
+        uint32_t us = mca_coll_future_component.future_auto_tuned[id].us;
+        /* set up umod */
+        up_comm = future_module->cached_up_comms[umod];
+        /* set up lmod */
+        low_comm = future_module->cached_low_comms[lmod];
         /* set up fs */
         COLL_BASE_COMPUTED_SEGCOUNT((size_t)fs, typelng, up_seg_count);
         low_seg_count = up_seg_count;
-        /* set up lmod */
-        low_comm = future_module->cached_low_comms[lmod];
-        up_comm = future_module->cached_up_comms[mca_coll_future_component.future_bcast_up_module];
-        /* set up us */
-        ((mca_coll_adapt_module_t *)(up_comm->c_coll->coll_ibcast_module))->adapt_component->adapt_ibcast_segment_size = us;
-        /* set up alg */
-        ((mca_coll_adapt_module_t *)(up_comm->c_coll->coll_ibcast_module))->adapt_component->adapt_ibcast_algorithm = alg;
+        if (umod == 1) {
+            /* set up ualg */
+            ((mca_coll_adapt_module_t *)(up_comm->c_coll->coll_ibcast_module))->adapt_component->adapt_ibcast_algorithm = ualg;
+            /* set up us */
+            ((mca_coll_adapt_module_t *)(up_comm->c_coll->coll_ibcast_module))->adapt_component->adapt_ibcast_segment_size = us;
+        }
     }
     else {
+        low_comm = future_module->cached_low_comms[mca_coll_future_component.future_bcast_low_module];
+        up_comm = future_module->cached_up_comms[mca_coll_future_component.future_bcast_up_module];
         COLL_BASE_COMPUTED_SEGCOUNT(mca_coll_future_component.future_bcast_up_segsize, typelng, up_seg_count);
         COLL_BASE_COMPUTED_SEGCOUNT(mca_coll_future_component.future_bcast_low_segsize, typelng, low_seg_count);
         mca_coll_future_reset_seg_count(&up_seg_count, &low_seg_count, &count);
-        low_comm = future_module->cached_low_comms[mca_coll_future_component.future_bcast_low_module];
-        up_comm = future_module->cached_up_comms[mca_coll_future_component.future_bcast_up_module];
-
     }
     
     int max_seg_count = (up_seg_count > low_seg_count) ? up_seg_count : low_seg_count;
@@ -509,27 +513,31 @@ mca_coll_future_bcast_intra_sync(void *buff,
         uint32_t c = future_auto_tuned_get_c(ompi_comm_size(future_module->cached_low_comms[0]));
         uint32_t m = future_auto_tuned_get_m(typelng * count);
         uint32_t id = n*mca_coll_future_component.future_auto_tune_c*mca_coll_future_component.future_auto_tune_m + c*mca_coll_future_component.future_auto_tune_m + m;
-        uint32_t fs = mca_coll_future_component.future_auto_tuned[id].fs;
-        uint32_t us = mca_coll_future_component.future_auto_tuned[id].us;
+        uint32_t umod = mca_coll_future_component.future_auto_tuned[id].umod;
         uint32_t lmod = mca_coll_future_component.future_auto_tuned[id].lmod;
-        uint32_t alg = mca_coll_future_component.future_auto_tuned[id].alg;
+        uint32_t fs = mca_coll_future_component.future_auto_tuned[id].fs;
+        uint32_t ualg = mca_coll_future_component.future_auto_tuned[id].ualg;
+        uint32_t us = mca_coll_future_component.future_auto_tuned[id].us;
+        /* set up umod */
+        up_comm = future_module->cached_up_comms[umod];
+        /* set up lmod */
+        low_comm = future_module->cached_low_comms[lmod];
         /* set up fs */
         COLL_BASE_COMPUTED_SEGCOUNT((size_t)fs, typelng, up_seg_count);
         low_seg_count = up_seg_count;
-        /* set up lmod */
-        low_comm = future_module->cached_low_comms[lmod];
-        up_comm = future_module->cached_up_comms[mca_coll_future_component.future_bcast_up_module];
-        /* set up us */
-        ((mca_coll_adapt_module_t *)(up_comm->c_coll->coll_ibcast_module))->adapt_component->adapt_ibcast_segment_size = us;
-        /* set up alg */
-        ((mca_coll_adapt_module_t *)(up_comm->c_coll->coll_ibcast_module))->adapt_component->adapt_ibcast_algorithm = alg;
+        if (umod == 1) {
+            /* set up ualg */
+            ((mca_coll_adapt_module_t *)(up_comm->c_coll->coll_ibcast_module))->adapt_component->adapt_ibcast_algorithm = ualg;
+            /* set up us */
+            ((mca_coll_adapt_module_t *)(up_comm->c_coll->coll_ibcast_module))->adapt_component->adapt_ibcast_segment_size = us;
+        }
     }
     else {
+        low_comm = future_module->cached_low_comms[mca_coll_future_component.future_bcast_low_module];
+        up_comm = future_module->cached_up_comms[mca_coll_future_component.future_bcast_up_module];
         COLL_BASE_COMPUTED_SEGCOUNT(mca_coll_future_component.future_bcast_up_segsize, typelng, up_seg_count);
         COLL_BASE_COMPUTED_SEGCOUNT(mca_coll_future_component.future_bcast_low_segsize, typelng, low_seg_count);
         mca_coll_future_reset_seg_count(&up_seg_count, &low_seg_count, &count);
-        low_comm = future_module->cached_low_comms[mca_coll_future_component.future_bcast_low_module];
-        up_comm = future_module->cached_up_comms[mca_coll_future_component.future_bcast_up_module];
     }
     
     int max_seg_count = (up_seg_count > low_seg_count) ? up_seg_count : low_seg_count;

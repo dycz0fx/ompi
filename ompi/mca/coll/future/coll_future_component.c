@@ -265,7 +265,7 @@ static int future_register(void)
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_auto_tune_n);
     
-    cs->future_auto_tune_c = 4;
+    cs->future_auto_tune_c = 3;
     (void) mca_base_component_var_register(c, "auto_tune_c",
                                            "auto tune c",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
