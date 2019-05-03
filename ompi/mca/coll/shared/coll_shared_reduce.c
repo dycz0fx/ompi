@@ -9,11 +9,13 @@ int mca_coll_shared_reduce_intra(const void *sbuf, void* rbuf, int count,
     ptrdiff_t extent, lower_bound;
     
     ompi_datatype_get_extent(dtype, &lower_bound, &extent);
-    if (count*extent <= 256) {
+    int size = ompi_comm_size(comm);
+    int seg_size = count / size;
+    if (count*extent <= 32*1024) {
         mca_coll_shared_reduce_binomial(sbuf, rbuf, count, dtype, op, root, comm, module);
     }
-    else if (count*extent <= 32*1024) {
-        mca_coll_shared_reduce_binomial(sbuf, rbuf, count, dtype, op, root, comm, module);
+    else if (seg_size*extent > MAX_SEG_SIZE) {
+        mca_coll_shared_reduce_pipeline(sbuf, rbuf, count, dtype, op, root, comm, module);
     }
     else{
         mca_coll_shared_reduce_shared_ring(sbuf, rbuf, count, dtype, op, root, comm, module);
@@ -129,6 +131,20 @@ int mca_coll_shared_reduce_binomial(const void *sbuf, void* rbuf, int count,
     size_t seg_count = 2048;
     int max_outstanding_reqs = 0;
     ompi_coll_tree_t* tree = ompi_coll_base_topo_build_bmtree(comm, root);
+    mca_coll_shared_reduce_generic(sbuf, rbuf, count, dtype, op, root, comm, module, tree, seg_count, max_outstanding_reqs);
+    ompi_coll_base_topo_destroy_tree(&tree);
+    return OMPI_SUCCESS;
+}
+
+int mca_coll_shared_reduce_pipeline(const void *sbuf, void* rbuf, int count,
+                                    struct ompi_datatype_t *dtype,
+                                    struct ompi_op_t *op,
+                                    int root,
+                                    struct ompi_communicator_t *comm,
+                                    mca_coll_base_module_t *module){
+    size_t seg_count = 2048*4;
+    int max_outstanding_reqs = 0;
+    ompi_coll_tree_t* tree = ompi_coll_base_topo_build_chain(1, comm, root);
     mca_coll_shared_reduce_generic(sbuf, rbuf, count, dtype, op, root, comm, module, tree, seg_count, max_outstanding_reqs);
     ompi_coll_base_topo_destroy_tree(&tree);
     return OMPI_SUCCESS;

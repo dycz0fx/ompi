@@ -39,7 +39,7 @@
 #include "ompi/mca/pml/pml.h"
 #include "ompi/mca/coll/base/coll_tags.h"
 
-#define MAX_SEG_SIZE 5000000 
+#define MAX_SEG_SIZE 6000000 
 //#define MAX_SM_SIZE 70
 BEGIN_C_DECLS
 
@@ -117,6 +117,12 @@ BEGIN_C_DECLS
                                   struct ompi_communicator_t *comm,
                                   mca_coll_base_module_t *module);
     int mca_coll_shared_reduce_binomial(const void *sbuf, void* rbuf, int count,
+                                    struct ompi_datatype_t *dtype,
+                                    struct ompi_op_t *op,
+                                    int root,
+                                    struct ompi_communicator_t *comm,
+                                    mca_coll_base_module_t *module);
+    int mca_coll_shared_reduce_pipeline(const void *sbuf, void* rbuf, int count,
                                     struct ompi_datatype_t *dtype,
                                     struct ompi_op_t *op,
                                     int root,

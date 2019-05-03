@@ -8,15 +8,21 @@ int mca_coll_shared_allreduce_intra(const void *sbuf, void *rbuf,
                                     mca_coll_base_module_t *module){
     ptrdiff_t extent, lower_bound;
     ompi_datatype_get_extent(dtype, &lower_bound, &extent);
+    int size = ompi_comm_size(comm);
+    int seg_size = count / size;
     if (count*extent <= 8*1024) {
         ompi_coll_base_allreduce_intra_recursivedoubling(sbuf, rbuf, count, dtype, op, comm, module);
     }
     else if (count*extent <= 128*1024) {
         ompi_coll_base_allreduce_intra_ring(sbuf, rbuf, count, dtype, op, comm, module);
     }
+    else if (seg_size*extent > MAX_SEG_SIZE) {
+        ompi_coll_base_allreduce_intra_ring(sbuf, rbuf, count, dtype, op, comm, module);
+    }
     else{
         mca_coll_shared_allreduce_shared_ring(sbuf, rbuf, count, dtype, op, comm, module);
     }
+    
     return OMPI_SUCCESS;
 
 }
