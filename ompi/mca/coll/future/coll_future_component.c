@@ -96,8 +96,8 @@ mca_coll_future_component_t mca_coll_future_component = {
 static int future_open(void){
     mca_coll_future_component_t *cs = &mca_coll_future_component;
     if (cs->future_auto_tune) {
-        cs->future_auto_tuned = (selection *)malloc(cs->future_auto_tune_n * cs->future_auto_tune_c * cs->future_auto_tune_m *  sizeof(selection));
-        char *filename = "/home/dycz0fx/results/auto/auto_tuned_bcast.bin";
+        cs->future_auto_tuned = (selection *)malloc(2*cs->future_auto_tune_n * cs->future_auto_tune_c * cs->future_auto_tune_m *  sizeof(selection));
+        char *filename = "/home/dycz0fx/results/auto/auto_tuned.bin";
         FILE *file = fopen(filename, "r");
         fread(cs->future_auto_tuned, sizeof(selection), 2*cs->future_auto_tune_n * cs->future_auto_tune_c * cs->future_auto_tune_m, file);
         fclose(file);
