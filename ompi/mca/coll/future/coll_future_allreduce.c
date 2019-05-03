@@ -284,7 +284,7 @@ mca_coll_future_allreduce_intra_sync(const void *sbuf,
         uint32_t n = future_auto_tuned_get_n(ompi_comm_size(future_module->cached_up_comms[0]));
         uint32_t c = future_auto_tuned_get_c(ompi_comm_size(future_module->cached_low_comms[0]));
         uint32_t m = future_auto_tuned_get_m(typelng * count);
-        uint32_t id = n*mca_coll_future_component.future_auto_tune_c*mca_coll_future_component.future_auto_tune_m + c*mca_coll_future_component.future_auto_tune_m + m;
+        uint32_t id = n*mca_coll_future_component.future_auto_tune_c*mca_coll_future_component.future_auto_tune_m + c*mca_coll_future_component.future_auto_tune_m + m + mca_coll_future_component.future_auto_tune_n*mca_coll_future_component.future_auto_tune_c*mca_coll_future_component.future_auto_tune_m;
         uint32_t umod = mca_coll_future_component.future_auto_tuned[id].umod;
         uint32_t lmod = mca_coll_future_component.future_auto_tuned[id].lmod;
         uint32_t fs = mca_coll_future_component.future_auto_tuned[id].fs;
