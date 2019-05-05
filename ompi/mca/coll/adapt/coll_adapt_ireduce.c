@@ -265,7 +265,6 @@ static int send_cb(ompi_request_t *req)
         OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output,"return context_list\n"));
         opal_free_list_return(mca_coll_adapt_component.adapt_ireduce_context_free_list, (opal_free_list_item_t*)context);
     }
-    OPAL_THREAD_UNLOCK(&(req->req_lock));
     req->req_free(&req);
     return 1;
 }
@@ -435,7 +434,6 @@ static int recv_cb(ompi_request_t *req)
         OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output, "[%d]: return context_list", context->con->rank));
         opal_free_list_return(mca_coll_adapt_component.adapt_ireduce_context_free_list, (opal_free_list_item_t*)context);
     }
-    OPAL_THREAD_UNLOCK(&(req->req_lock));
     req->req_free(&req);
     return 1;
 }

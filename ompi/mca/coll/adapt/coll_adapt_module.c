@@ -189,9 +189,7 @@ void print_tree(ompi_coll_tree_t* tree, int rank)
 
 int adapt_request_free(ompi_request_t** request)
 {
-    OPAL_THREAD_LOCK (&((*request)->req_lock));
     (*request)->req_state = OMPI_REQUEST_INVALID;
-    OPAL_THREAD_UNLOCK (&((*request)->req_lock));
     OBJ_RELEASE(*request);
     *request = MPI_REQUEST_NULL;
     return OMPI_SUCCESS;

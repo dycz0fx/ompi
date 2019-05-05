@@ -171,7 +171,6 @@ static int send_cb(ompi_request_t *req)
         opal_free_list_return(mca_coll_adapt_component.adapt_ibcast_context_free_list, (opal_free_list_item_t*)context);
         OPAL_THREAD_UNLOCK(mutex_temp);
     }
-    OPAL_THREAD_UNLOCK(&(req->req_lock));
     req->req_free(&req);
     return 1;
 }
@@ -269,7 +268,6 @@ static int recv_cb(ompi_request_t *req){
         opal_free_list_return(mca_coll_adapt_component.adapt_ibcast_context_free_list, (opal_free_list_item_t*)context);
         OPAL_THREAD_UNLOCK(mutex_temp);
     }
-    OPAL_THREAD_UNLOCK(&(req->req_lock));
     req->req_free(&req);
     return 1;
 }
