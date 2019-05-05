@@ -136,7 +136,6 @@ struct ompi_request_t {
     ompi_request_complete_fn_t req_complete_cb; /**< Called when the request is MPI completed */
     void *req_complete_cb_data;
     ompi_mpi_object_t req_mpi_object;           /**< Pointer to MPI object that created this request */
-    opal_mutex_t *req_lock;                   //lock the request for request_complete and set_callback
 
 };
 
@@ -452,7 +451,6 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
     
     //    printf("[%" PRIx64 "]: In request complete 0: req %p, req_complete_cb no null %d, req_complete %d, rc %d\n", gettid(), (void *)request, NULL != request->req_complete_cb, request->req_complete == REQUEST_COMPLETED, rc);
     //printf("[%" PRIx64 ", request %p]: ompi_request_complete lock \n", gettid(), (void *)request);
-    OPAL_THREAD_LOCK(request->req_lock);
     if(NULL != request->req_complete_cb) {
         ompi_request_complete_fn_t temp = request->req_complete_cb;
         request->req_complete_cb = NULL;
@@ -481,7 +479,6 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
     }
     
     //printf("[%" PRIx64 ", request %p]: ompi_request_complete unlock \n", gettid(), (void *)request);
-    OPAL_THREAD_UNLOCK(request->req_lock);
     return OMPI_SUCCESS;
 }
 
@@ -489,7 +486,6 @@ static inline int ompi_request_set_callback(ompi_request_t* request,
                                             ompi_request_complete_fn_t cb,
                                             void* cb_data)
 {
-    OPAL_THREAD_LOCK (request->req_lock);
     request->req_complete_cb_data = cb_data;
     request->req_complete_cb = cb;
     int rc = 0;
@@ -503,7 +499,6 @@ static inline int ompi_request_set_callback(ompi_request_t* request,
             return rc;
         }
     }
-    OPAL_THREAD_UNLOCK (request->req_lock);
     return rc;
 }
 
