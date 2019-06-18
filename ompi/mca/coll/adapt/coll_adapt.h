@@ -14,7 +14,7 @@
 #define MCA_COLL_ADAPT_EXPORT_H
 
 #include "ompi_config.h"
-
+#include "avx_op_reduce.h"
 #include "mpi.h"
 #include "opal/mca/mca.h"
 #include "opal/datatype/opal_convertor.h"

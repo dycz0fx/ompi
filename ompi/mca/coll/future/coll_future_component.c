@@ -97,7 +97,7 @@ static int future_open(void){
     mca_coll_future_component_t *cs = &mca_coll_future_component;
     if (cs->future_auto_tune) {
         cs->future_auto_tuned = (selection *)malloc(2*cs->future_auto_tune_n * cs->future_auto_tune_c * cs->future_auto_tune_m *  sizeof(selection));
-        char *filename = "/home/dycz0fx/results/auto/auto_tuned.bin";
+        char *filename = "/lustre/project/k1205/lei/xi/results/auto2/auto_tuned.bin";
         FILE *file = fopen(filename, "r");
         fread(cs->future_auto_tuned, sizeof(selection), 2*cs->future_auto_tune_n * cs->future_auto_tune_c * cs->future_auto_tune_m, file);
         fclose(file);
@@ -257,7 +257,7 @@ static int future_register(void)
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_auto_tune);
 
-    cs->future_auto_tune_n = 5;
+    cs->future_auto_tune_n = 4;
     (void) mca_base_component_var_register(c, "auto_tune_n",
                                            "auto tune n",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
@@ -265,7 +265,7 @@ static int future_register(void)
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_auto_tune_n);
     
-    cs->future_auto_tune_c = 3;
+    cs->future_auto_tune_c = 1;
     (void) mca_base_component_var_register(c, "auto_tune_c",
                                            "auto tune c",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
@@ -273,7 +273,7 @@ static int future_register(void)
                                            MCA_BASE_VAR_SCOPE_READONLY,
                                            &cs->future_auto_tune_c);
 
-    cs->future_auto_tune_m = 21;
+    cs->future_auto_tune_m = 26;
     (void) mca_base_component_var_register(c, "auto_tune_m",
                                            "auto tune n",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,

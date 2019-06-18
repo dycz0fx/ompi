@@ -73,7 +73,8 @@ int mca_coll_shared_reduce_shared_ring(const void *sbuf, void* rbuf, int count,
             //for (j=0; j<seg_size; j++) {
             //    shared_module->data_buf[cur][j] = shared_module->data_buf[cur][j] + ((char *)sbuf+cur*l_seg_size*extent)[j];
             //}
-            ompi_op_reduce(op, (char *)sbuf+cur*l_seg_size*extent, shared_module->data_buf[cur], seg_size, dtype);
+            //ompi_op_reduce(op, (char *)sbuf+cur*l_seg_size*extent, shared_module->data_buf[cur], seg_size, dtype);
+            avx_op_reduce((char *)sbuf+cur*l_seg_size*extent, shared_module->data_buf[cur], seg_size);
             shared_module->sm_data_win->w_osc_module->osc_fence(0, shared_module->sm_data_win);
             //printf("[%d cur %d rank %d]: Op (%d %d)\n", i, cur, rank, shared_module->data_buf[cur][0], shared_module->data_buf[cur][1]);
         }
@@ -287,9 +288,12 @@ int mca_coll_shared_reduce_generic( const void* sendbuf, void* recvbuf, int orig
                         }
                     }
                     /* apply operation */
-                    ompi_op_reduce(op, local_op_buffer,
+                    //ompi_op_reduce(op, local_op_buffer,
+                                   //accumbuf + (ptrdiff_t)segindex * (ptrdiff_t)segment_increment,
+                                   //recvcount, datatype );
+                    avx_op_reduce(local_op_buffer,
                                    accumbuf + (ptrdiff_t)segindex * (ptrdiff_t)segment_increment,
-                                   recvcount, datatype );
+                                   recvcount);
                 } else if ( segindex > 0 ) {
                     void* accumulator = accumbuf + (ptrdiff_t)(segindex-1) * (ptrdiff_t)segment_increment;
                     if( tree->tree_nextsize <= 1 ) {
@@ -298,9 +302,9 @@ int mca_coll_shared_reduce_generic( const void* sendbuf, void* recvbuf, int orig
                             local_op_buffer = sendtmpbuf + (ptrdiff_t)(segindex-1) * (ptrdiff_t)segment_increment;
                         }
                     }
-                    ompi_op_reduce(op, local_op_buffer, accumulator, prevcount,
-                                   datatype );
-                    
+                    //ompi_op_reduce(op, local_op_buffer, accumulator, prevcount,
+                    //               datatype );
+                    avx_op_reduce(local_op_buffer, accumulator, prevcount); 
                     /* all reduced on available data this step (i) complete,
                      * pass to the next process unless you are the root.
                      */

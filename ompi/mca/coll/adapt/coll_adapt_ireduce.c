@@ -341,14 +341,15 @@ static int recv_cb(ompi_request_t *req)
             context->con->accumbuf[context->frag_id] = context->inbuf->buff - context->con->lower_bound;
         }
         //op sbuf and accmbuf to accumbuf
-        ompi_op_reduce(context->con->op, context->con->sbuf + (ptrdiff_t)context->frag_id * (ptrdiff_t)context->con->segment_increment, context->con->accumbuf[context->frag_id], op_count, context->con->datatype);
-        
+        //ompi_op_reduce(context->con->op, context->con->sbuf + (ptrdiff_t)context->frag_id * (ptrdiff_t)context->con->segment_increment, context->con->accumbuf[context->frag_id], op_count, context->con->datatype);
+        avx_op_reduce(context->con->sbuf + (ptrdiff_t)context->frag_id * (ptrdiff_t)context->con->segment_increment, context->con->accumbuf[context->frag_id], op_count);
     }
     else {
         if (context->inbuf == NULL) {
             //op rbuf and accumbuf to rbuf
             OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output, "[%d]: op rbuf and accumbuf to rbuf\n", context->con->rank));
-            ompi_op_reduce(context->con->op, context->con->accumbuf[context->frag_id], context->buff, op_count, context->con->datatype);
+            //ompi_op_reduce(context->con->op, context->con->accumbuf[context->frag_id], context->buff, op_count, context->con->datatype);
+            avx_op_reduce(context->con->accumbuf[context->frag_id], context->buff, op_count);
             //free old accumbuf
             OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output, "[%d]: free old accumbuf %p\n", context->con->rank, (void *)to_inbuf(context->con->accumbuf[context->frag_id], context->con->distance)));
             opal_free_list_return(context->con->inbuf_list, (opal_free_list_item_t*)to_inbuf(context->con->accumbuf[context->frag_id], context->con->distance));
@@ -358,7 +359,8 @@ static int recv_cb(ompi_request_t *req)
         else {
             //op inbuf and accmbuf to accumbuf
             OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output, "[%d]: op inbuf and accmbuf to accumbuf\n", context->con->rank));
-            ompi_op_reduce(context->con->op, context->inbuf->buff - context->con->lower_bound, context->con->accumbuf[context->frag_id], op_count, context->con->datatype);
+            //ompi_op_reduce(context->con->op, context->inbuf->buff - context->con->lower_bound, context->con->accumbuf[context->frag_id], op_count, context->con->datatype);
+            avx_op_reduce(context->inbuf->buff - context->con->lower_bound, context->con->accumbuf[context->frag_id], op_count);
         }
     }
     
