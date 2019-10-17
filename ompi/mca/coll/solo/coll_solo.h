@@ -141,6 +141,20 @@ int mca_coll_solo_bcast_linear_intra_osc(void *buff, int count,
                                          struct ompi_communicator_t *comm, 
                                          mca_coll_base_module_t * module);
 
+int mca_coll_solo_bcast_pipeline_intra_memcpy(void *buff, int count,
+                                              struct ompi_datatype_t *dtype, 
+                                              int root,
+                                              struct ompi_communicator_t *comm, 
+                                              mca_coll_base_module_t * module,
+                                              size_t seg_size);
+
+int mca_coll_solo_bcast_pipeline_intra_osc(void *buff, int count,
+                                           struct ompi_datatype_t *dtype, 
+                                           int root,
+                                           struct ompi_communicator_t *comm, 
+                                           mca_coll_base_module_t * module,
+                                           size_t seg_size);
+
 /* MPI_Reduce algorithms */
 int mca_coll_solo_reduce_intra(const void *sbuf, void *rbuf, int count,
                                struct ompi_datatype_t *dtype,

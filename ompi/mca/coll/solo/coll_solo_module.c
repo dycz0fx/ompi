@@ -231,7 +231,7 @@ int mca_coll_solo_lazy_enable(mca_coll_base_module_t * module, struct ompi_commu
 
     /* Create the static_win with shared memory allocation */
     mca_coll_solo_setup_static_win(solo_module, comm,
-                                     mca_coll_solo_component.static_block_size);
+                                   mca_coll_solo_component.static_block_size);
 
     solo_module->enabled = true;
 
