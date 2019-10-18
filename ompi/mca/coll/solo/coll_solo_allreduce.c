@@ -229,9 +229,7 @@ int mca_coll_solo_allreduce_ring_intra_osc(const void *sbuf, void *rbuf, int cou
     if (rank == size - 1) {
         seg_count = count - rank * l_seg_count;
     }
-    //solo_module->static_win->w_osc_module->osc_fence(0,solo_module->static_win);
     *(int *) (solo_module->ctrl_bufs[rank]) = rank;
-    //solo_module->static_win->w_osc_module->osc_fence(0,solo_module->static_win);
     mac_coll_solo_barrier_intra(comm, module);
 
     int cur = rank;
@@ -261,7 +259,6 @@ int mca_coll_solo_allreduce_ring_intra_osc(const void *sbuf, void *rbuf, int cou
         cur = (cur - 1 + size) % size;
         *(int *) (solo_module->ctrl_bufs[rank]) =
             (*(int *) (solo_module->ctrl_bufs[rank]) + 1) % size;
-        //solo_module->static_win->w_osc_module->osc_fence(0, solo_module->static_win);
         mac_coll_solo_barrier_intra(comm, module);
 
     }
@@ -287,9 +284,6 @@ int mca_coll_solo_allreduce_ring_intra_osc(const void *sbuf, void *rbuf, int cou
     } else if ((size_t) count * extent <= mca_coll_solo_component.mpool_large_block_size) {
         mca_coll_solo_detach_buf(solo_module, comm, local_buf, &data_bufs);
         mca_coll_solo_mpool_return(mca_coll_solo_component.solo_mpool, id, count * extent);
-    } else {
-        //printf("TOO BIG\n");
-    }
-
+    } 
     return OMPI_SUCCESS;
 }
