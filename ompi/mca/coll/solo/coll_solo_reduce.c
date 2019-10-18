@@ -43,11 +43,12 @@ int mca_coll_solo_reduce_intra(const void *sbuf, void *rbuf, int count,
  * At last, root copies data back from the shared data buffer.
  */
 int mca_coll_solo_reduce_ring_intra_memcpy(const void *sbuf, void *rbuf,
-                                             int count,
-                                             struct ompi_datatype_t *dtype,
-                                             struct ompi_op_t *op,
-                                             int root, struct ompi_communicator_t
-                                             *comm, mca_coll_base_module_t * module)
+                                           int count,
+                                           struct ompi_datatype_t *dtype,
+                                           struct ompi_op_t *op,
+                                           int root, 
+                                           struct ompi_communicator_t *comm, 
+                                           mca_coll_base_module_t * module)
 {
     mca_coll_solo_module_t *solo_module = (mca_coll_solo_module_t *) module;
     int size = ompi_comm_size(comm);
@@ -83,7 +84,23 @@ int mca_coll_solo_reduce_ring_intra_memcpy(const void *sbuf, void *rbuf,
                                                 count * extent);
         }
     } else {
-        //printf("TOO BIG\n");
+        int seg_count = count;
+        size_t typelng;
+        ompi_datatype_type_size(dtype, &typelng);
+        COLL_BASE_COMPUTED_SEGCOUNT(mca_coll_solo_component.mpool_large_block_size, typelng, seg_count);
+        int num_segments = (count + seg_count - 1) / seg_count;
+        int last_count = count - seg_count * (num_segments - 1);
+        for (int i = 0; i < num_segments; i++) {
+            char *temp_sbuf = (char *)sbuf + seg_count * extent * i;
+            char *temp_rbuf = (char *)rbuf + seg_count * extent * i;
+            int temp_count = seg_count;
+            if (i == num_segments - 1) {
+                temp_count = last_count;
+            }
+            mca_coll_solo_reduce_ring_intra_memcpy(temp_sbuf, temp_rbuf, temp_count, dtype, op, 
+                                                   root, comm, module);
+        }
+        return MPI_SUCCESS;
     }
 
     /* Set up segment count */
@@ -93,9 +110,7 @@ int mca_coll_solo_reduce_ring_intra_memcpy(const void *sbuf, void *rbuf,
     if (rank == size - 1) {
         seg_count = count - rank * l_seg_count;
     }
-    //solo_module->static_win->w_osc_module->osc_fence(0,solo_module->static_win);
     *(int *) (solo_module->ctrl_bufs[rank]) = rank;
-    //solo_module->static_win->w_osc_module->osc_fence(0,solo_module->static_win);
     mac_coll_solo_barrier_intra(comm, module);
 
     int cur = rank;
@@ -107,9 +122,7 @@ int mca_coll_solo_reduce_ring_intra_memcpy(const void *sbuf, void *rbuf,
         }
         /* At first iteration, copy local data to the solo data buffer */
         if (cur == rank) {
-            //cur_win->w_osc_module->osc_fence(0, cur_win);
             memcpy(data_bufs[cur], (char *) sbuf + cur * l_seg_count * extent, seg_count * extent);
-            //cur_win->w_osc_module->osc_fence(0, cur_win);
             mac_coll_solo_barrier_intra(comm, module);
 
         }
@@ -117,13 +130,11 @@ int mca_coll_solo_reduce_ring_intra_memcpy(const void *sbuf, void *rbuf,
         else {
             ompi_op_reduce(op, (char *) sbuf + cur * l_seg_count * extent,
                            data_bufs[cur], seg_count, dtype);
-            //cur_win->w_osc_modulbe->osc_fence(0,cur_win);
             mac_coll_solo_barrier_intra(comm, module);
         }
         cur = (cur - 1 + size) % size;
         *(int *) (solo_module->ctrl_bufs[rank]) =
             (*(int *) (solo_module->ctrl_bufs[rank]) + 1) % size;
-        //solo_module->static_win->w_osc_module->osc_fence(0,solo_module->static_win);
         mac_coll_solo_barrier_intra(comm, module);
 
     }
@@ -141,11 +152,9 @@ int mca_coll_solo_reduce_ring_intra_memcpy(const void *sbuf, void *rbuf,
             c = c + seg_count * extent;
         }
     }
-    //cur_win->w_osc_module->osc_fence(0, cur_win);
     mac_coll_solo_barrier_intra(comm, module);
-    if ((size_t) count * extent <= mca_coll_solo_component.static_block_size) {
-        ;
-    } else if ((size_t) count * extent <= mca_coll_solo_component.mpool_large_block_size) {
+    if ((size_t) count * extent > mca_coll_solo_component.static_block_size && 
+        (size_t) count * extent <= mca_coll_solo_component.mpool_large_block_size) {
         mca_coll_solo_mpool_return(mca_coll_solo_component.solo_mpool, ids[rank],
                                      count * extent);
         if (ids != NULL) {
@@ -157,10 +166,7 @@ int mca_coll_solo_reduce_ring_intra_memcpy(const void *sbuf, void *rbuf,
             free(data_bufs);
             data_bufs = NULL;
         }
-    } else {
-        //printf("TOO BIG\n");
     }
-
 
     return OMPI_SUCCESS;
 }
@@ -201,7 +207,23 @@ int mca_coll_solo_reduce_ring_intra_osc(const void *sbuf, void *rbuf,
         data_bufs = mca_coll_solo_attach_buf(solo_module, comm, local_buf, count * extent);
         cur_win = solo_module->dynamic_win;
     } else {
-        //printf("TOO BIG\n");
+        int seg_count = count;
+        size_t typelng;
+        ompi_datatype_type_size(dtype, &typelng);
+        COLL_BASE_COMPUTED_SEGCOUNT(mca_coll_solo_component.mpool_large_block_size, typelng, seg_count);
+        int num_segments = (count + seg_count - 1) / seg_count;
+        int last_count = count - seg_count * (num_segments - 1);
+        for (int i = 0; i < num_segments; i++) {
+            char *temp_sbuf = (char *)sbuf + seg_count * extent * i;
+            char *temp_rbuf = (char *)rbuf + seg_count * extent * i;
+            int temp_count = seg_count;
+            if (i == num_segments - 1) {
+                temp_count = last_count;
+            }
+            mca_coll_solo_reduce_ring_intra_osc(temp_sbuf, temp_rbuf, temp_count, dtype, op, 
+                                                root, comm, module);
+        }
+        return MPI_SUCCESS;
     }
 
     /* Set up segment count */
@@ -211,9 +233,7 @@ int mca_coll_solo_reduce_ring_intra_osc(const void *sbuf, void *rbuf,
     if (rank == size - 1) {
         seg_count = count - rank * l_seg_count;
     }
-    //solo_module->static_win->w_osc_module->osc_fence(0,solo_module->static_win);
     *(int *) (solo_module->ctrl_bufs[rank]) = rank;
-    //solo_module->static_win->w_osc_module->osc_fence(0,solo_module->static_win);
     mac_coll_solo_barrier_intra(comm, module);
 
     int cur = rank;
@@ -243,7 +263,6 @@ int mca_coll_solo_reduce_ring_intra_osc(const void *sbuf, void *rbuf,
         cur = (cur - 1 + size) % size;
         *(int *) (solo_module->ctrl_bufs[rank]) =
             (*(int *) (solo_module->ctrl_bufs[rank]) + 1) % size;
-        //solo_module->static_win->w_osc_module->osc_fence(0, solo_module->static_win);
         mac_coll_solo_barrier_intra(comm, module);
 
     }
@@ -271,9 +290,6 @@ int mca_coll_solo_reduce_ring_intra_osc(const void *sbuf, void *rbuf,
     } else if ((size_t) count * extent <= mca_coll_solo_component.mpool_large_block_size) {
         mca_coll_solo_detach_buf(solo_module, comm, local_buf, &data_bufs);
         mca_coll_solo_mpool_return(mca_coll_solo_component.solo_mpool, id, count * extent);
-    } else {
-        //printf("TOO BIG\n");
     }
-
     return OMPI_SUCCESS;
 }

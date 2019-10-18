@@ -139,7 +139,7 @@ int mca_coll_solo_bcast_linear_intra_osc(void *buff, int count,
         } else {
             mca_coll_solo_detach_buf(solo_module, comm, NULL, &attached_bufs);
         }
-    } 
+    }
 
     return OMPI_SUCCESS;
 }
