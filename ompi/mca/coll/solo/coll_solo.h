@@ -60,12 +60,6 @@ typedef struct mca_coll_solo_module_t {
     bool enabled;
 
     /**
-     * osc alrogithms attach memory blocks to this bynamic window and use it to perform one-sided 
-     * communications. 
-     */
-    MPI_Win dynamic_win;
-
-    /**
      * This window is created by ompi_win_allocate_shared such that each process contains a shared 
      * memory data buffer, and this data buffer is divided into two parts - ctrl_bufs and data_bufs.
      */
@@ -101,18 +95,6 @@ mca_coll_base_module_t *mca_coll_solo_comm_query(struct ompi_communicator_t *com
 /* Lazily enable a module (since it involves expensive memory allocation, etc.) */
 int mca_coll_solo_lazy_enable(mca_coll_base_module_t * module, struct ompi_communicator_t *comm);
 
-/* Attach a memory block to the dynamic_win of a communicator */
-char **mca_coll_solo_attach_buf(mca_coll_solo_module_t * solo_module,
-                                struct ompi_communicator_t *comm,
-                                char *local_buf, 
-                                size_t local_buf_size);
-
-/* Detach a memory block from the dynamic_win of a communicator */
-void mca_coll_solo_detach_buf(mca_coll_solo_module_t * solo_module,
-                              struct ompi_communicator_t *comm,
-                              char *local_buf, 
-                              char ***attached_bufs);
-
 /* Setup and initialize the static_win of a communicator */
 void mca_coll_solo_setup_static_win(mca_coll_solo_module_t *solo_module,
                                     struct ompi_communicator_t *comm, 
@@ -135,25 +117,12 @@ int mca_coll_solo_bcast_linear_intra_memcpy(void *buff, int count,
                                             struct ompi_communicator_t *comm, 
                                             mca_coll_base_module_t * module);
 
-int mca_coll_solo_bcast_linear_intra_osc(void *buff, int count,
-                                         struct ompi_datatype_t *dtype,
-                                         int root, 
-                                         struct ompi_communicator_t *comm, 
-                                         mca_coll_base_module_t * module);
-
 int mca_coll_solo_bcast_pipeline_intra_memcpy(void *buff, int count,
                                               struct ompi_datatype_t *dtype, 
                                               int root,
                                               struct ompi_communicator_t *comm, 
                                               mca_coll_base_module_t * module,
                                               size_t seg_size);
-
-int mca_coll_solo_bcast_pipeline_intra_osc(void *buff, int count,
-                                           struct ompi_datatype_t *dtype, 
-                                           int root,
-                                           struct ompi_communicator_t *comm, 
-                                           mca_coll_base_module_t * module,
-                                           size_t seg_size);
 
 /* MPI_Reduce algorithms */
 int mca_coll_solo_reduce_intra(const void *sbuf, void *rbuf, int count,
@@ -163,12 +132,6 @@ int mca_coll_solo_reduce_intra(const void *sbuf, void *rbuf, int count,
                                struct ompi_communicator_t *comm, 
                                mca_coll_base_module_t * module);
 
-int mca_coll_solo_reduce_ring_intra(const void *sbuf, void *rbuf, int count,
-                                    struct ompi_datatype_t *dtype,
-                                    struct ompi_op_t *op, int root,
-                                    struct ompi_communicator_t *comm,
-                                    mca_coll_base_module_t * module);
-
 int mca_coll_solo_reduce_ring_intra_memcpy(const void *sbuf, void *rbuf, int count,
                                            struct ompi_datatype_t *dtype,
                                            struct ompi_op_t *op,
@@ -176,11 +139,6 @@ int mca_coll_solo_reduce_ring_intra_memcpy(const void *sbuf, void *rbuf, int cou
                                            struct ompi_communicator_t
                                            *comm, mca_coll_base_module_t * module);
 
-int mca_coll_solo_reduce_ring_intra_osc(const void *sbuf, void *rbuf, int count,
-                                        struct ompi_datatype_t *dtype,
-                                        struct ompi_op_t *op, int root,
-                                        struct ompi_communicator_t *comm,
-                                        mca_coll_base_module_t * module);
 
 /* MPI_Allreduce algorithms */
 int mca_coll_solo_allreduce_intra(const void *sbuf, void *rbuf, int count,
@@ -195,10 +153,39 @@ int mca_coll_solo_allreduce_ring_intra_memcpy(const void *sbuf, void *rbuf, int 
                                               struct ompi_communicator_t *comm, 
                                               mca_coll_base_module_t * module);
 
-int mca_coll_solo_allreduce_ring_intra_osc(const void *sbuf, void *rbuf, int count, 
-                                           struct ompi_datatype_t *dtype, 
-                                           struct ompi_op_t *op, 
-                                           struct ompi_communicator_t *comm, 
-                                           mca_coll_base_module_t * module);
+
+/* Solo pack to shared memory */
+static inline void mca_coll_solo_pack_to_shared(void *local_buf, void *shared_buf, struct ompi_datatype_t *dtype, int count, ptrdiff_t extent) {
+    if (ompi_datatype_is_predefined(dtype)) {
+        memcpy((char *) shared_buf, (char *) local_buf, count * extent);
+    }
+    else {
+        MPI_Aint pos = 0;
+        ompi_datatype_pack_external("external32", local_buf, count, dtype, shared_buf, count * extent, &pos);
+    }
+}
+
+/* Solo unpack from shared memory */
+static inline void mca_coll_solo_unpack_from_shared(void *local_buf, void *shared_buf, struct ompi_datatype_t *dtype, int count, ptrdiff_t extent) {
+    if (ompi_datatype_is_predefined(dtype)) {
+        memcpy((char *) local_buf, (char *) shared_buf, count * extent);
+    }
+    else {
+        MPI_Aint pos = 0;
+        ompi_datatype_unpack_external("external32", shared_buf, count * extent, &pos, local_buf, count, dtype);
+    }
+}
+
+/* Solo copy from source to target */
+static inline void mca_coll_solo_copy(void *source, void *target, struct ompi_datatype_t *dtype, int count, ptrdiff_t extent) {
+    if (ompi_datatype_is_predefined(dtype)) {
+        memcpy(target, source, count * extent);
+    }
+    else {
+        ompi_datatype_copy_content_same_ddt(dtype, count, target, source);
+    }
+    return;
+} 
+
 END_C_DECLS
 #endif                          /* MCA_COLL_SOLO_EXPORT_H */

@@ -53,7 +53,6 @@ static int mca_coll_solo_module_disable(mca_coll_base_module_t * module,
 static void mca_coll_solo_module_construct(mca_coll_solo_module_t * module)
 {
     module->enabled = false;
-    module->dynamic_win = NULL;
     module->static_win = NULL;
     module->ctrl_bufs = NULL;
     module->data_bufs = NULL;
@@ -82,9 +81,6 @@ static int mca_coll_solo_module_disable(mca_coll_base_module_t * module,
     //     int rank = ompi_comm_rank(comm);
 
     //     /* Free the windows */
-    //     if (m->dynamic_win != NULL) {
-    //         ompi_win_free(m->dynamic_win);
-    //     }
     //     if (m->static_win != NULL) {
     //         ompi_win_free(m->static_win);
     //     }
@@ -225,10 +221,6 @@ int mca_coll_solo_lazy_enable(mca_coll_base_module_t * module, struct ompi_commu
         mca_coll_solo_component.solo_mpool = OBJ_NEW(mca_coll_solo_mpool_t);
     }
 
-    /* Create the dynamic_win */
-    ompi_win_create_dynamic((opal_info_t *) (&ompi_mpi_info_null), comm,
-                            &solo_module->dynamic_win);
-
     /* Create the static_win with shared memory allocation */
     mca_coll_solo_setup_static_win(solo_module, comm,
                                    mca_coll_solo_component.static_block_size);
@@ -239,46 +231,6 @@ int mca_coll_solo_lazy_enable(mca_coll_base_module_t * module, struct ompi_commu
     comm->c_coll->coll_allreduce = mca_coll_solo_allreduce_intra;
     mca_base_var_set_value(var_id, &tmp_origin, sizeof(int), MCA_BASE_VAR_SOURCE_SET, NULL);
     return OMPI_SUCCESS;
-}
-
-/**
- * Attach a memory block to the dynamic_win of a communicator, returns an array contains the 
- * addresses of all the blocks of the processes in the communicator.
- * local_buf == NULL and local_buf_size == 0 means there is no block to be attached on this process.
- */
-char **mca_coll_solo_attach_buf(mca_coll_solo_module_t * solo_module,
-                                  struct ompi_communicator_t *comm,
-                                  char *local_buf, size_t local_buf_size)
-{
-    int rank = ompi_comm_rank(comm);
-    int size = ompi_comm_size(comm);
-
-    char **attached_bufs = (char **) malloc(sizeof(char *) * size);
-    attached_bufs[rank] = local_buf;
-    ompi_coll_base_allgather_intra_recursivedoubling(MPI_IN_PLACE, 0,
-                                                     MPI_DATATYPE_NULL,
-                                                     attached_bufs,
-                                                     1, MPI_AINT, comm,
-                                                     (mca_coll_base_module_t *) solo_module);
-
-    solo_module->dynamic_win->w_osc_module->osc_win_attach(solo_module->dynamic_win, local_buf,
-                                                             local_buf_size);
-
-    return attached_bufs;
-}
-
-/* Detach a memory block from the dynamic_win of a communicator */
-void mca_coll_solo_detach_buf(mca_coll_solo_module_t * solo_module,
-                                struct ompi_communicator_t *comm,
-                                char *local_buf, char ***attached_bufs)
-{
-    if (local_buf != NULL) {
-        solo_module->dynamic_win->w_osc_module->osc_win_detach(solo_module->dynamic_win, local_buf);
-    }
-
-    free(*attached_bufs);
-    *attached_bufs = NULL;
-    return;
 }
 
 /* Setup and initialize the static_win of a communicator */
