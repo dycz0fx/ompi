@@ -160,8 +160,8 @@ static inline void mca_coll_solo_pack_to_shared(void *local_buf, void *shared_bu
         memcpy((char *) shared_buf, (char *) local_buf, count * extent);
     }
     else {
-        MPI_Aint pos = 0;
-        ompi_datatype_pack_external("external32", local_buf, count, dtype, shared_buf, count * extent, &pos);
+        int pos = 0;        
+        MPI_Pack(local_buf, count, dtype, shared_buf, count * extent, &pos, MPI_COMM_SELF);
     }
 }
 
@@ -171,8 +171,8 @@ static inline void mca_coll_solo_unpack_from_shared(void *local_buf, void *share
         memcpy((char *) local_buf, (char *) shared_buf, count * extent);
     }
     else {
-        MPI_Aint pos = 0;
-        ompi_datatype_unpack_external("external32", shared_buf, count * extent, &pos, local_buf, count, dtype);
+        int pos = 0;
+        MPI_Unpack(shared_buf, count * extent, &pos, local_buf, count, dtype, MPI_COMM_SELF);
     }
 }
 

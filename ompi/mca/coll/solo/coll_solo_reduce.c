@@ -18,7 +18,12 @@ int mca_coll_solo_reduce_intra(const void *sbuf, void *rbuf, int count,
                                  struct ompi_communicator_t *comm, 
                                  mca_coll_base_module_t * module)
 {
-    return mca_coll_solo_reduce_ring_intra_memcpy(sbuf, rbuf, count, dtype, op, root, comm, module);
+    if (ompi_op_is_commute(op)) {
+        return mca_coll_solo_reduce_ring_intra_memcpy(sbuf, rbuf, count, dtype, op, root, comm, module);
+    }
+    else {
+        return ompi_coll_base_reduce_intra_basic_linear(sbuf, rbuf, count, dtype, op, root, comm, module);
+    }
 }
 
 /**
@@ -46,6 +51,7 @@ int mca_coll_solo_reduce_ring_intra_memcpy(const void *sbuf, void *rbuf,
     int size = ompi_comm_size(comm);
     int rank = ompi_comm_rank(comm);
     int i;
+
     ptrdiff_t extent, lower_bound;
     ompi_datatype_get_extent(dtype, &lower_bound, &extent);
 
@@ -89,7 +95,11 @@ int mca_coll_solo_reduce_ring_intra_memcpy(const void *sbuf, void *rbuf,
         int num_segments = (count + seg_count - 1) / seg_count;
         int last_count = count - seg_count * (num_segments - 1);
         for (int i = 0; i < num_segments; i++) {
-            char *temp_sbuf = (char *)sbuf + seg_count * extent * i;
+            char *temp_sbuf;
+            if (sbuf == MPI_IN_PLACE)
+                temp_sbuf = MPI_IN_PLACE;
+            else
+                temp_sbuf = (char *)sbuf + seg_count * extent * i;
             char *temp_rbuf = (char *)rbuf + seg_count * extent * i;
             int temp_count = seg_count;
             if (i == num_segments - 1) {
@@ -99,6 +109,11 @@ int mca_coll_solo_reduce_ring_intra_memcpy(const void *sbuf, void *rbuf,
                                                    root, comm, module);
         }
         return MPI_SUCCESS;
+    }
+
+    char *sbuf_temp = (char *)sbuf;
+    if( sbuf == MPI_IN_PLACE ) {
+        sbuf_temp = (char *)rbuf;
     }
 
     *(int *) (solo_module->ctrl_bufs[rank]) = rank;
@@ -113,12 +128,13 @@ int mca_coll_solo_reduce_ring_intra_memcpy(const void *sbuf, void *rbuf,
         }
         /* At first iteration, copy local data to the shared data buffer */
         if (cur == rank) {
-            mca_coll_solo_copy((void *) ((char *) sbuf + cur * l_seg_count * extent), (void *) data_bufs[cur], dtype, seg_count, extent);
+            mca_coll_solo_copy((void *) ((char *) sbuf_temp + cur * l_seg_count * extent), 
+                               (void *) data_bufs[cur], dtype, seg_count, extent);
             mac_coll_solo_barrier_intra(comm, module);
         }
         /* For other iterations, do operations on the shared data buffer */
         else {
-            ompi_op_reduce(op, (char *) sbuf + cur * l_seg_count * extent,
+            ompi_op_reduce(op, (char *) sbuf_temp + cur * l_seg_count * extent,
                            data_bufs[cur], seg_count, dtype);
             mac_coll_solo_barrier_intra(comm, module);
         }
