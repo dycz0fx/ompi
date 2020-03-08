@@ -1,12 +1,23 @@
-#include "coll_future.h"
+/*
+ * Copyright (c) 2018-2020 The University of Tennessee and The University
+ *                         of Tennessee Research Foundation.  All rights
+ *                         reserved.
+ * $COPYRIGHT$
+ *
+ * Additional copyrights may follow
+ *
+ * $HEADER$
+ */
+
+#include "coll_han.h"
 #include "ompi/mca/coll/base/coll_base_functions.h"
 #include "ompi/mca/coll/base/coll_tags.h"
 #include "ompi/mca/pml/pml.h"
-#include "coll_future_trigger.h"
+#include "coll_han_trigger.h"
 
 /* only work with regular situation (each node has equal number of processes) */
 int
-ompi_coll_future_scatter_intra(const void *sbuf, int scount,
+ompi_coll_han_scatter_intra(const void *sbuf, int scount,
                                struct ompi_datatype_t *sdtype,
                                void *rbuf, int rcount,
                                struct ompi_datatype_t *rdtype,
@@ -20,11 +31,11 @@ ompi_coll_future_scatter_intra(const void *sbuf, int scount,
     w_size = ompi_comm_size(comm);
     
     /* create the subcommunicators */
-    mca_coll_future_module_t *future_module = (mca_coll_future_module_t *)module;
-    mca_coll_future_comm_create(comm, future_module);
-    ompi_communicator_t *low_comm = future_module->cached_low_comms[mca_coll_future_component.future_scatter_low_module];
-    ompi_communicator_t *up_comm = future_module->cached_up_comms[mca_coll_future_component.future_scatter_up_module];
-    int *vranks = future_module->cached_vranks;
+    mca_coll_han_module_t *han_module = (mca_coll_han_module_t *)module;
+    mca_coll_han_comm_create(comm, han_module);
+    ompi_communicator_t *low_comm = han_module->cached_low_comms[mca_coll_han_component.han_scatter_low_module];
+    ompi_communicator_t *up_comm = han_module->cached_up_comms[mca_coll_han_component.han_scatter_up_module];
+    int *vranks = han_module->cached_vranks;
     int low_rank = ompi_comm_rank(low_comm);
     int low_size = ompi_comm_size(low_comm);
     int up_size = ompi_comm_size(up_comm);
@@ -35,7 +46,7 @@ ompi_coll_future_scatter_intra(const void *sbuf, int scount,
     OMPI_REQUEST_INIT(temp_request, false);
     temp_request->req_state = OMPI_REQUEST_ACTIVE;
     temp_request->req_type = 0;
-    temp_request->req_free = future_request_free;
+    temp_request->req_free = han_request_free;
     temp_request->req_status.MPI_SOURCE = 0;
     temp_request->req_status.MPI_TAG = 0;
     temp_request->req_status.MPI_ERROR = 0;
@@ -44,8 +55,8 @@ ompi_coll_future_scatter_intra(const void *sbuf, int scount,
 
     int root_low_rank;
     int root_up_rank;
-    mca_coll_future_get_ranks(vranks, root, low_size, &root_low_rank, &root_up_rank);
-    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: Future Scatter root %d root_low_rank %d root_up_rank %d\n", w_rank, root, root_low_rank, root_up_rank));
+    mca_coll_han_get_ranks(vranks, root, low_size, &root_low_rank, &root_up_rank);
+    OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output, "[%d]: Future Scatter root %d root_low_rank %d root_up_rank %d\n", w_rank, root, root_low_rank, root_up_rank));
 
     /* reorder sbuf based on rank */
     /* Suppose, message is 0 1 2 3 4 5 6 7
@@ -54,12 +65,12 @@ ompi_coll_future_scatter_intra(const void *sbuf, int scount,
      */
     char *reorder_buf = NULL;
     char *reorder_sbuf = NULL;
-    int *topo = mca_coll_future_topo_init(comm, future_module, 2);
+    int *topo = mca_coll_han_topo_init(comm, han_module, 2);
     
     if (w_rank == root) {
         /* if the processes are mapped-by core, no need to reorder */
-        if (future_module->is_mapbycore) {
-            OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: Future Scatter is_bycore: ", w_rank));
+        if (han_module->is_mapbycore) {
+            OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output, "[%d]: Future Scatter is_bycore: ", w_rank));
             reorder_sbuf = (char *)sbuf;
         }
         else {
@@ -70,7 +81,7 @@ ompi_coll_future_scatter_intra(const void *sbuf, int scount,
             reorder_sbuf = reorder_buf - sgap;
             for (i=0; i<up_size; i++) {
                 for (j=0; j<low_size; j++) {
-                    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d]: Future Scatter copy from %d %d\n", w_rank, (i*low_size+j)*2+1, topo[(i*low_size+j)*2+1]));
+                    OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output, "[%d]: Future Scatter copy from %d %d\n", w_rank, (i*low_size+j)*2+1, topo[(i*low_size+j)*2+1]));
                     ompi_datatype_copy_content_same_ddt(sdtype,
                                                         (ptrdiff_t)scount,
                                                         reorder_sbuf + sextent*(i*low_size + j)*(ptrdiff_t)scount,
@@ -84,9 +95,9 @@ ompi_coll_future_scatter_intra(const void *sbuf, int scount,
     mca_coll_task_t *us = OBJ_NEW(mca_coll_task_t);
     /* setup us task arguments */
     mca_scatter_argu_t *us_argu = malloc(sizeof(mca_scatter_argu_t));
-    mac_coll_future_set_scatter_argu(us_argu, us, reorder_sbuf, NULL, reorder_buf, scount, sdtype, (char *)rbuf, rcount, rdtype, root, root_up_rank, root_low_rank, up_comm, low_comm, w_rank, low_rank!=root_low_rank, temp_request);
+    mac_coll_han_set_scatter_argu(us_argu, us, reorder_sbuf, NULL, reorder_buf, scount, sdtype, (char *)rbuf, rcount, rdtype, root, root_up_rank, root_low_rank, up_comm, low_comm, w_rank, low_rank!=root_low_rank, temp_request);
     /* init us task */
-    init_task(us, mca_coll_future_scatter_us_task, (void *)(us_argu));
+    init_task(us, mca_coll_han_scatter_us_task, (void *)(us_argu));
     /* issure us task */
     issue_task(us);
     
@@ -95,13 +106,13 @@ ompi_coll_future_scatter_intra(const void *sbuf, int scount,
     
 }
 
-int mca_coll_future_scatter_us_task(void *task_argu)
+int mca_coll_han_scatter_us_task(void *task_argu)
 {
     mca_scatter_argu_t *t = (mca_scatter_argu_t *)task_argu;
     OBJ_RELEASE(t->cur_task);
 
     if (t->noop) {
-        OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Scatter:  us noop\n", t->w_rank));
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output, "[%d] Future Scatter:  us noop\n", t->w_rank));
     }
     else {
         int low_size = ompi_comm_size(t->low_comm);
@@ -109,7 +120,7 @@ int mca_coll_future_scatter_us_task(void *task_argu)
         rsize = opal_datatype_span(&t->rdtype->super, (int64_t)t->rcount * low_size, &rgap);
         char *tmp_buf = (char *) malloc(rsize);
         char *tmp_rbuf = tmp_buf - rgap;
-        OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Scatter:  us scatter\n", t->w_rank));
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output, "[%d] Future Scatter:  us scatter\n", t->w_rank));
         /* inter node scatter */
         t->up_comm->c_coll->coll_scatter((char *)t->sbuf, t->scount*low_size, t->sdtype, tmp_rbuf, t->rcount*low_size, t->rdtype, t->root_up_rank, t->up_comm, t->up_comm->c_coll->coll_scatter_module);
         t->sbuf = tmp_rbuf;
@@ -125,17 +136,17 @@ int mca_coll_future_scatter_us_task(void *task_argu)
     /* setup up ls task arguments */
     t->cur_task = ls;
     /* init ls task */
-    init_task(ls, mca_coll_future_scatter_ls_task, (void *)t);
+    init_task(ls, mca_coll_han_scatter_ls_task, (void *)t);
     /* issure ls task */
     issue_task(ls);
 
     return OMPI_SUCCESS;
 }
 
-int mca_coll_future_scatter_ls_task(void *task_argu)
+int mca_coll_han_scatter_ls_task(void *task_argu)
 {
     mca_scatter_argu_t *t = (mca_scatter_argu_t *)task_argu;
-    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Scatter:  ls\n", t->w_rank));
+    OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output, "[%d] Future Scatter:  ls\n", t->w_rank));
     OBJ_RELEASE(t->cur_task);
     /* shared memory node scatter */
     t->low_comm->c_coll->coll_scatter((char *)t->sbuf, t->scount, t->sdtype, (char *)t->rbuf, t->rcount, t->rdtype, t->root_low_rank, t->low_comm, t->low_comm->c_coll->coll_scatter_module);
@@ -144,14 +155,14 @@ int mca_coll_future_scatter_ls_task(void *task_argu)
         free(t->sbuf_inter_free);
         t->sbuf_inter_free = NULL;
     }
-    OPAL_OUTPUT_VERBOSE((30, mca_coll_future_component.future_output, "[%d] Future Scatter:  ls finish\n", t->w_rank));
+    OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output, "[%d] Future Scatter:  ls finish\n", t->w_rank));
     ompi_request_t *temp_req = t->req;
     free(t);
     ompi_request_complete(temp_req, 1);
     return OMPI_SUCCESS;
 }
 
-void mac_coll_future_set_scatter_argu(mca_scatter_argu_t *argu,
+void mac_coll_han_set_scatter_argu(mca_scatter_argu_t *argu,
                                       mca_coll_task_t *cur_task,
                                       void *sbuf,
                                       void *sbuf_inter_free,
