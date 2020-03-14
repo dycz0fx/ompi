@@ -1,6 +1,5 @@
-
 /*
- * Copyright (c) 2014      The University of Tennessee and The University
+ * Copyright (c) 2014-2020 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * $COPYRIGHT$
@@ -8,15 +7,6 @@
  * Additional copyrights may follow
  * 
  * $HEADER$
- */
-/**
- * @file
- *
- * Warning: this is not for the faint of heart -- don't even bother
- * reading this source code if you don't have a strong understanding
- * of nested data structures and pointer math (remember that
- * associativity and order of C operations is *critical* in terms of
- * pointer math!).
  */
 
 #include "ompi_config.h"
@@ -106,16 +96,14 @@ mca_coll_adapt_comm_query(struct ompi_communicator_t *comm, int *priority)
 {
     mca_coll_adapt_module_t *adapt_module;
 
-    /* If we're intercomm, or if there's only one process in the
-     communicator */
+    /* If we're intercomm, or if there's only one process in the communicator */
     if (OMPI_COMM_IS_INTER(comm) || 1 == ompi_comm_size(comm)) {
         opal_output_verbose(10, ompi_coll_base_framework.framework_output,
                             "coll:adapt:comm_query (%d/%s): intercomm, comm is too small; disqualifying myself", comm->c_contextid, comm->c_name);
         return NULL;
     }
 
-    /* Get the priority level attached to this module. If priority is less
-     * than or equal to 0, then the module is unavailable. */
+    /* Get the priority level attached to this module. If priority is less than or equal to 0, then the module is unavailable. */
     *priority = mca_coll_adapt_component.adapt_priority;
     if (mca_coll_adapt_component.adapt_priority <= 0) {
         opal_output_verbose(10, ompi_coll_base_framework.framework_output,
@@ -135,7 +123,6 @@ mca_coll_adapt_comm_query(struct ompi_communicator_t *comm, int *priority)
     adapt_module->super.coll_allgatherv = NULL;
     adapt_module->super.coll_allreduce  = NULL;
     adapt_module->super.coll_alltoall   = NULL;
-    //adapt_module->super.coll_alltoallv  = mca_coll_adapt_alltoallv;
     adapt_module->super.coll_alltoallw  = NULL;
     adapt_module->super.coll_barrier    = NULL;
     adapt_module->super.coll_bcast      = mca_coll_adapt_bcast;
@@ -149,15 +136,13 @@ mca_coll_adapt_comm_query(struct ompi_communicator_t *comm, int *priority)
     adapt_module->super.coll_scatterv   = NULL;
     adapt_module->super.coll_ibcast     = mca_coll_adapt_ibcast;
     adapt_module->super.coll_ireduce    = mca_coll_adapt_ireduce;
-    //adapt_module->super.coll_ialltoallv = mca_coll_adapt_ialltoallv;
-    adapt_module->super.coll_iallreduce = NULL; //mca_coll_adapt_iallreduce;
+    adapt_module->super.coll_iallreduce = NULL;
     
     opal_output_verbose(10, ompi_coll_base_framework.framework_output,
                         "coll:adapt:comm_query (%d/%s): pick me! pick me!",
                         comm->c_contextid, comm->c_name);
     return &(adapt_module->super);
 }
-
 
 /*
  * Init module on the communicator
@@ -168,25 +153,9 @@ static int adapt_module_enable(mca_coll_base_module_t *module,
     return OMPI_SUCCESS;
 }
 
-int ompi_coll_adapt_lazy_enable(mca_coll_base_module_t *module,
-                             struct ompi_communicator_t *comm)
-{
-    return OMPI_SUCCESS;
-}
-
-void print_tree(ompi_coll_tree_t* tree, int rank)
-{
-    int i;
-    printf("[%d, prev = %d, next_size = %d, root =%d]:", rank, tree->tree_prev, tree->tree_nextsize, tree->tree_root);
-    for( i = 0; i < tree->tree_nextsize; i++ ){
-        printf(" %d", tree->tree_next[i]);
-    }
-    if (rank == tree->tree_root) {
-        printf(" root = %d", tree->tree_root);
-    }
-    printf("\n");
-}
-
+/* 
+ * Free ADAPT request 
+ */
 int adapt_request_free(ompi_request_t** request)
 {
     (*request)->req_state = OMPI_REQUEST_INVALID;

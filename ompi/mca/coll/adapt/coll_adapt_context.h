@@ -1,13 +1,24 @@
+/*
+ * Copyright (c) 2014-2020 The University of Tennessee and The University
+ *                         of Tennessee Research Foundation.  All rights
+ *                         reserved.
+ * $COPYRIGHT$
+ * 
+ * Additional copyrights may follow
+ * 
+ * $HEADER$
+ */
+
 #include "ompi/mca/coll/coll.h"
-#include "opal/class/opal_free_list.h"      //free list
-#include "opal/class/opal_list.h"       //list
+#include "opal/class/opal_free_list.h"
+#include "opal/class/opal_list.h"
 #include "ompi/datatype/ompi_datatype.h"
 #include "ompi/communicator/communicator.h"
 #include "ompi/op/op.h"
-#include "ompi/mca/coll/base/coll_base_topo.h"  //ompi_coll_tree_t
+#include "ompi/mca/coll/base/coll_base_topo.h"
 #include "coll_adapt_inbuf.h"
 
-/* bcast constant context in bcast context */
+/* Bcast constant context in bcast context */
 struct mca_coll_adapt_constant_bcast_context_s {
     opal_object_t  super;
     int root;
@@ -21,9 +32,12 @@ struct mca_coll_adapt_constant_bcast_context_s {
     opal_mutex_t * mutex;
     int* recv_array;
     int* send_array;
-    int num_recv_segs; //store the length of the fragment array, how many fragments are recevied
-    int num_recv_fini;  //store how many segs is finish recving
-    int num_sent_segs;  //number of sent segments
+    /* Length of the fragment array, which is the number of recevied segments*/
+    int num_recv_segs; 
+    /* Number of segments that is finishing recving */
+    int num_recv_fini; 
+    /* Store the number of sent segments */ 
+    int num_sent_segs; 
     ompi_coll_tree_t * tree;
     int ibcast_tag;
 };
@@ -33,7 +47,7 @@ typedef struct mca_coll_adapt_constant_bcast_context_s mca_coll_adapt_constant_b
 OBJ_CLASS_DECLARATION(mca_coll_adapt_constant_bcast_context_t);
 
 
-/* bcast context of each segment*/
+/* Bcast context of each segment*/
 typedef struct mca_coll_adapt_bcast_context_s mca_coll_adapt_bcast_context_t;
 
 typedef int (*mca_coll_adapt_bcast_cuda_callback_fn_t)(mca_coll_adapt_bcast_context_t *context);
@@ -49,7 +63,7 @@ struct mca_coll_adapt_bcast_context_s {
 
 OBJ_CLASS_DECLARATION(mca_coll_adapt_bcast_context_t);
 
-/* reduce constant context in reduce context */
+/* Reduce constant context in reduce context */
 struct mca_coll_adapt_constant_reduce_context_s {
     opal_object_t  super;
     size_t count;
@@ -57,30 +71,41 @@ struct mca_coll_adapt_constant_reduce_context_s {
     ompi_datatype_t * datatype;
     ompi_communicator_t * comm;
     size_t real_seg_size;
-    int segment_increment;      //increment of each segment
+    /* Increment of each segment */
+    int segment_increment;      
     int num_segs;
     ompi_request_t * request;
-    int rank;      //change, unused
-    int32_t num_recv_segs; //store the length of the fragment array, how many fragments are recevied
-    int32_t num_sent_segs;  //number of sent segments
-    int32_t* next_recv_segs;  //next seg need to be received for every children
-    opal_mutex_t * mutex;     //old, only for test
-    opal_mutex_t * mutex_recv_list;     //use to lock recv list
-    opal_mutex_t * mutex_num_recv_segs;     //use to lock num_recv_segs
-    opal_mutex_t * mutex_num_sent;     //use to lock num_sent
-    opal_mutex_t ** mutex_op_list;   //use to lock each segment when do the reduce op
-    ompi_op_t * op;  //reduce operation
+    int rank;
+    /* Length of the fragment array, which is the number of recevied segments*/
+    int32_t num_recv_segs;
+    /* Number of sent segments */
+    int32_t num_sent_segs;  
+    /* Next seg need to be received for every children */
+    int32_t* next_recv_segs;  
+    /* Mutex to protect recv_list */
+    opal_mutex_t * mutex_recv_list;
+    /* Mutex to protect num_recv_segs */ 
+    opal_mutex_t * mutex_num_recv_segs;
+    /* Mutex to protect num_sent */
+    opal_mutex_t * mutex_num_sent;
+    /* Mutex to protect each segment when do the reduce op */
+    opal_mutex_t ** mutex_op_list;
+    /* Reduce operation */
+    ompi_op_t * op;  
     ompi_coll_tree_t * tree;
-    char ** accumbuf;   //accumulate buff, used in reduce
-    mca_coll_adapt_inbuf_t ** accumbuf_to_inbuf;  /* inbuf list address of accumbuf */
+    /* Accumulate buff */
+    char ** accumbuf;
     opal_free_list_t *inbuf_list;
-    opal_list_t *recv_list;    //a list to store the segments which are received and not yet be sent
+    /* A list to store the segments which are received and not yet be sent */
+    opal_list_t *recv_list;    
     ptrdiff_t lower_bound;
-    int32_t ongoing_send;   //how many send is posted but not finished
-    char * sbuf;    //inputed sbuf
-    char * rbuf;    //inputed rbuf
+    /* How many sends are posted but not finished */
+    int32_t ongoing_send;
+    char * sbuf;    
+    char * rbuf;
     int root;
-    int distance;   //address of inbuf->buff to address of inbuf
+    /* The distance between the address of inbuf->buff and the address of inbuf */
+    int distance;  
     int ireduce_tag;
 };
 
@@ -88,7 +113,7 @@ typedef struct mca_coll_adapt_constant_reduce_context_s mca_coll_adapt_constant_
 
 OBJ_CLASS_DECLARATION(mca_coll_adapt_constant_reduce_context_t);
 
-/* reduce context of each segment */
+/* Reduce context of each segment */
 typedef struct mca_coll_adapt_reduce_context_s mca_coll_adapt_reduce_context_t;
 
 typedef int (*mca_coll_adapt_reduce_cuda_callback_fn_t)(mca_coll_adapt_reduce_context_t *context);
@@ -100,7 +125,8 @@ struct mca_coll_adapt_reduce_context_s {
     int child_id;
     int peer;
     mca_coll_adapt_constant_reduce_context_t * con;
-    mca_coll_adapt_inbuf_t *inbuf;  //store the incoming segment
+    /* store the incoming segment */
+    mca_coll_adapt_inbuf_t *inbuf; 
 };
 
 OBJ_CLASS_DECLARATION(mca_coll_adapt_reduce_context_t);

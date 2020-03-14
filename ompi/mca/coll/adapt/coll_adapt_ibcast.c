@@ -1,13 +1,24 @@
+/*
+ * Copyright (c) 2014-2020 The University of Tennessee and The University
+ *                         of Tennessee Research Foundation.  All rights
+ *                         reserved.
+ * $COPYRIGHT$
+ * 
+ * Additional copyrights may follow
+ * 
+ * $HEADER$
+ */
+
 #include "ompi_config.h"
 #include "ompi/mca/pml/pml.h"
 #include "coll_adapt.h"
 #include "coll_adapt_algorithms.h"
 #include "coll_adapt_context.h"
 #include "ompi/mca/coll/base/coll_tags.h"
-#include "ompi/mca/coll/base/coll_base_functions.h"     //COLL_BASE_COMPUTED_SEGCOUNT
+#include "ompi/mca/coll/base/coll_base_functions.h"
 #include "opal/util/bit_ops.h"
-#include "opal/sys/atomic.h"                //atomic
-#include "ompi/mca/pml/ob1/pml_ob1.h"       //dump
+#include "opal/sys/atomic.h"
+#include "ompi/mca/pml/ob1/pml_ob1.h"
 
 
 typedef int (*mca_coll_adapt_ibcast_fn_t)(
@@ -22,7 +33,6 @@ typedef int (*mca_coll_adapt_ibcast_fn_t)(
 );
     
 static mca_coll_adapt_algorithm_index_t mca_coll_adapt_ibcast_algorithm_index[] = {
-    {0, (uintptr_t)mca_coll_adapt_ibcast_tuned},
     {1, (uintptr_t)mca_coll_adapt_ibcast_binomial},
     {2, (uintptr_t)mca_coll_adapt_ibcast_in_order_binomial},
     {3, (uintptr_t)mca_coll_adapt_ibcast_binary},
@@ -31,12 +41,15 @@ static mca_coll_adapt_algorithm_index_t mca_coll_adapt_ibcast_algorithm_index[] 
     {6, (uintptr_t)mca_coll_adapt_ibcast_linear},
 };
 
+/*
+ * Set up MCA parameters of MPI_Bcast and MPI_IBcast
+ */
 int mca_coll_adapt_ibcast_init(void)
 {
     mca_base_component_t *c = &mca_coll_adapt_component.super.collm_version;
     
     mca_coll_adapt_component.adapt_ibcast_algorithm = 1;
-    mca_base_component_var_register(c, "bcast_algorithm",
+    mca_base_component_var_register(c, "bcast_algorithm, 1: binomial, 2: in_order_binomial, 3: binary, 4: pipeline, 5: chain, 6: linear",
                                     "Algorithm of broadcast",
                                     MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                     OPAL_INFO_LVL_5,
@@ -72,9 +85,11 @@ int mca_coll_adapt_ibcast_init(void)
     return OMPI_SUCCESS;
 }
 
+/*
+ * Release the free list created in mca_coll_adapt_ibcast_generic
+ */
 int mca_coll_adapt_ibcast_fini(void)
 {
-    /* release the free list */
     if (NULL != mca_coll_adapt_component.adapt_ibcast_context_free_list) {
         OBJ_RELEASE(mca_coll_adapt_component.adapt_ibcast_context_free_list);
         mca_coll_adapt_component.adapt_ibcast_context_free_list = NULL;
@@ -84,6 +99,9 @@ int mca_coll_adapt_ibcast_fini(void)
     return OMPI_SUCCESS;
 }
 
+/*
+ *  Finish a ibcast request
+ */
 static int ibcast_request_fini(mca_coll_adapt_bcast_context_t *context)
 {
     ompi_request_t *temp_req = context->con->request;
@@ -102,18 +120,12 @@ static int ibcast_request_fini(mca_coll_adapt_bcast_context_t *context)
     return OMPI_SUCCESS;
 }
 
-/* send call back */
 /*
- * The req_lock is held when entering this routine
- * It is released in this routine if no error occured
+ * Callback function of isend
  */
 static int send_cb(ompi_request_t *req)
 {
     mca_coll_adapt_bcast_context_t *context = (mca_coll_adapt_bcast_context_t *) req->req_complete_cb_data;
-    
-    //opal_output_init();
-    //mca_pml_ob1_dump(context->con->comm, 0);
-    //opal_output_finalize();
     
     int err;
     
@@ -121,7 +133,7 @@ static int send_cb(ompi_request_t *req)
 
     OPAL_THREAD_LOCK(context->con->mutex);
     int sent_id = context->con->send_array[context->child_id];
-    //has fragments in recv_array can be sent
+    /* If the current process has fragments in recv_array can be sent */
     if (sent_id < context->con->num_recv_segs) {
         ompi_request_t *send_req;
         int new_id = context->con->recv_array[sent_id];
@@ -142,13 +154,9 @@ static int send_cb(ompi_request_t *req)
         err = MCA_PML_CALL(isend(send_buff, send_count, send_context->con->datatype, send_context->peer, (send_context->con->ibcast_tag << 16) + new_id, MCA_PML_BASE_SEND_SYNCHRONOUS, send_context->con->comm, &send_req));
         if (MPI_SUCCESS != err) {
             OPAL_THREAD_UNLOCK(context->con->mutex);
-            /*
-             * No need to unlock the req_lock in case of error:
-             * this is done in the calling routine
-             */
             return err;
         }
-        //invoke send call back
+        /* Invoke send call back */
         OPAL_THREAD_UNLOCK(context->con->mutex);
         ompi_request_set_callback(send_req, send_cb, send_context);
         OPAL_THREAD_LOCK(context->con->mutex);
@@ -158,7 +166,7 @@ static int send_cb(ompi_request_t *req)
     int num_recv_fini_t = context->con->num_recv_fini;
     int rank = ompi_comm_rank(context->con->comm);
     opal_mutex_t * mutex_temp = context->con->mutex;
-    //check whether signal the condition
+    /* Check whether signal the condition */
     if ((rank == context->con->root && num_sent == context->con->tree->tree_nextsize * context->con->num_segs) ||
         (context->con->tree->tree_nextsize > 0 && rank != context->con->root && num_sent == context->con->tree->tree_nextsize * context->con->num_segs && num_recv_fini_t == context->con->num_segs) ||
         (context->con->tree->tree_nextsize == 0 && num_recv_fini_t == context->con->num_segs)) {
@@ -172,31 +180,30 @@ static int send_cb(ompi_request_t *req)
         OPAL_THREAD_UNLOCK(mutex_temp);
     }
     req->req_free(&req);
+    /* Call back function return 1, which means successful */
     return 1;
 }
 
-//receive call back
 /*
- * The req_lock is held when entering this routine
- * It is released in this routine if no error occured
+ * Callback function of irecv
  */
 static int recv_cb(ompi_request_t *req){
-    //get necessary info from request
+    /* Get necessary info from request */
     mca_coll_adapt_bcast_context_t *context = (mca_coll_adapt_bcast_context_t *) req->req_complete_cb_data;
     
     int err, i;
     OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output, "[%d, %" PRIx64 "]: Recv(cb): segment %d from %d at buff %p root %d\n", ompi_comm_rank(context->con->comm), gettid(), context->frag_id, context->peer, (void *)context->buff, context->con->root));
     
-    //store the frag_id to seg array
+    /* Store the frag_id to seg array */
     OPAL_THREAD_LOCK(context->con->mutex);
     int num_recv_segs_t = ++(context->con->num_recv_segs);
     context->con->recv_array[num_recv_segs_t-1] = context->frag_id;
     
     int new_id = num_recv_segs_t + mca_coll_adapt_component.adapt_ibcast_max_recv_requests - 1;
-    //receive new segment
+    /* Receive new segment */
     if (new_id < context->con->num_segs) {
         ompi_request_t *recv_req;
-        //get new context item from free list
+        /* Get new context item from free list */
         mca_coll_adapt_bcast_context_t * recv_context = (mca_coll_adapt_bcast_context_t *) opal_free_list_wait(mca_coll_adapt_component.adapt_ibcast_context_free_list);
         recv_context->buff = context->buff + (new_id - context->frag_id) * context->con->real_seg_size;
         recv_context->frag_id = new_id;
@@ -212,15 +219,15 @@ static int recv_cb(ompi_request_t *req){
         OPAL_OUTPUT_VERBOSE((30, mca_coll_adapt_component.adapt_output, "[%d]: Recv(start in recv cb): segment %d from %d at buff %p recv_count %d tag %d\n", ompi_comm_rank(context->con->comm), context->frag_id, context->peer, (void *)recv_buff, recv_count, (recv_context->con->ibcast_tag << 16) + recv_context->frag_id));
         MCA_PML_CALL(irecv(recv_buff, recv_count, recv_context->con->datatype, recv_context->peer, (recv_context->con->ibcast_tag << 16) + recv_context->frag_id, recv_context->con->comm, &recv_req));
 
-        //invoke recvive call back
+        /* Invoke recvive call back */
         OPAL_THREAD_UNLOCK(context->con->mutex);
         ompi_request_set_callback(recv_req, recv_cb, recv_context);
         OPAL_THREAD_LOCK(context->con->mutex);
     }
     
-    //send segment to its children
+    /* Send segment to its children */
     for (i = 0; i < context->con->tree->tree_nextsize; i++) {
-        //if can send the segment now means the only segment need to be sent is the just arrived one
+        /* If the current process can send the segment now, which means the only segment need to be sent is the just arrived one */
         if (num_recv_segs_t-1 == context->con->send_array[i]) {
             ompi_request_t *send_req;
             int send_count = context->con->seg_count;
@@ -243,7 +250,7 @@ static int recv_cb(ompi_request_t *req){
                 OPAL_THREAD_UNLOCK(context->con->mutex);
                 return err;
             }
-            //invoke send call back
+            /* Invoke send call back */
             OPAL_THREAD_UNLOCK(context->con->mutex);
             ompi_request_set_callback(send_req, send_cb, send_context);
             OPAL_THREAD_LOCK(context->con->mutex);
@@ -255,7 +262,7 @@ static int recv_cb(ompi_request_t *req){
     int rank = ompi_comm_rank(context->con->comm);
     opal_mutex_t * mutex_temp = context->con->mutex;
 
-    //if this is leaf and has received all the segments
+    /* If this process is leaf and has received all the segments */
     if ((rank == context->con->root && num_sent == context->con->tree->tree_nextsize * context->con->num_segs) ||
         (context->con->tree->tree_nextsize > 0 && rank != context->con->root && num_sent == context->con->tree->tree_nextsize * context->con->num_segs && num_recv_fini_t == context->con->num_segs) ||
         (context->con->tree->tree_nextsize == 0 && num_recv_fini_t == context->con->num_segs)) {
@@ -273,7 +280,6 @@ static int recv_cb(ompi_request_t *req){
 }
 
 int mca_coll_adapt_ibcast(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module){
-    //printf("ADAPT\n");
     if (count == 0) {
         ompi_request_t *temp_request;
         temp_request = OBJ_NEW(ompi_request_t);
@@ -298,16 +304,12 @@ int mca_coll_adapt_ibcast(void *buff, int count, struct ompi_datatype_t *datatyp
         ibcast_tag = ibcast_tag % 4096;
         mca_coll_adapt_ibcast_fn_t bcast_func = (mca_coll_adapt_ibcast_fn_t)mca_coll_adapt_ibcast_algorithm_index[mca_coll_adapt_component.adapt_ibcast_algorithm].algorithm_fn_ptr;
         return bcast_func(buff, count, datatype, root, comm, request, module, ibcast_tag);
-        //return mca_coll_adapt_ibcast_binomial(buff, count, datatype, root, comm, request, module, ibcast_tag);
     }
 }
 
-int mca_coll_adapt_ibcast_tuned(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module, int ibcast_tag){
-    OPAL_OUTPUT_VERBOSE((10, mca_coll_adapt_component.adapt_output, "tuned not implemented\n"));
-    return OMPI_SUCCESS;
-
-}
-
+/*
+ * Ibcast functions with different algorithms
+ */ 
 int mca_coll_adapt_ibcast_binomial(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module, int ibcast_tag){
     ompi_coll_tree_t* tree = ompi_coll_base_topo_build_bmtree(comm, root);
     int err = mca_coll_adapt_ibcast_generic(buff, count, datatype, root, comm, request, module, tree, mca_coll_adapt_component.adapt_ibcast_segment_size, ibcast_tag);
@@ -358,23 +360,34 @@ int mca_coll_adapt_ibcast_linear(void *buff, int count, struct ompi_datatype_t *
 
 
 int mca_coll_adapt_ibcast_generic(void *buff, int count, struct ompi_datatype_t *datatype, int root, struct ompi_communicator_t *comm, ompi_request_t ** request, mca_coll_base_module_t *module, ompi_coll_tree_t* tree, size_t seg_size, int ibcast_tag){
-    int i, j;       //temp variable for iteration
-    int rank;       //rank of this node
-    int err;        //record return value
-    int min;        //the min of num_segs and SEND_NUM or RECV_NUM, in case the num_segs is less than SEND_NUM or RECV_NUM
+    /* Tempory variables for iteration */
+    int i, j;
+    /* Rank of this process */
+    int rank;
+    /* Record return value */
+    int err;
+    /* The min of num_segs and SEND_NUM or RECV_NUM, in case the num_segs is less than SEND_NUM or RECV_NUM */
+    int min;
     
-    int seg_count = count;      //number of datatype in a segment
-    size_t type_size;           //the size of a datatype
-    size_t real_seg_size;       //the real size of a segment
+    /* Number of datatype in a segment */
+    int seg_count = count;
+    /* Size of a datatype */
+    size_t type_size;           
+    /* Real size of a segment */
+    size_t real_seg_size;       
     ptrdiff_t extent, lb;
-    int num_segs;               //the number of segments
+    /* Number of segments */
+    int num_segs;
     
-    ompi_request_t * temp_request = NULL;  //the request be passed outside
+    /* The request passed outside */
+    ompi_request_t * temp_request = NULL;
     opal_mutex_t * mutex;
-    int *recv_array = NULL;   //store those segments which are received
-    int *send_array = NULL;   //record how many isend has been issued for every child
+    /* Store the segments which are received */
+    int *recv_array = NULL;
+    /* Record how many isends have been issued for every child */
+    int *send_array = NULL;
     
-    //set up free list
+    /* Set up free list */
     if (0 == mca_coll_adapt_component.adapt_ibcast_context_free_list_enabled) {
         int32_t context_free_list_enabled = opal_atomic_add_fetch_32(&(mca_coll_adapt_component.adapt_ibcast_context_free_list_enabled), 1);
         if (1 == context_free_list_enabled) {
@@ -391,7 +404,7 @@ int mca_coll_adapt_ibcast_generic(void *buff, int count, struct ompi_datatype_t 
         }
     }
     
-    //set up request
+    /* Set up request */
     temp_request = OBJ_NEW(ompi_request_t);
     OMPI_REQUEST_INIT(temp_request, false);
     temp_request->req_state = OMPI_REQUEST_ACTIVE;
@@ -404,12 +417,12 @@ int mca_coll_adapt_ibcast_generic(void *buff, int count, struct ompi_datatype_t 
     temp_request->req_status._ucount = 0;
     *request = temp_request;
     
-    //set up mutex
+    /* Set up mutex */
     mutex = OBJ_NEW(opal_mutex_t);
     
     rank = ompi_comm_rank(comm);
     
-    //Determine number of elements sent per operation
+    /* Determine number of elements sent per operation */
     ompi_datatype_type_size(datatype, &type_size);
     COLL_BASE_COMPUTED_SEGCOUNT(seg_size, type_size, seg_count);
     
@@ -417,7 +430,7 @@ int mca_coll_adapt_ibcast_generic(void *buff, int count, struct ompi_datatype_t 
     num_segs = (count + seg_count - 1) / seg_count;
     real_seg_size = (ptrdiff_t)seg_count * extent;
     
-    //set memory for recv_array and send_array, created on heap becasue they are needed to be accessed by other functions, callback function
+    /* Set memory for recv_array and send_array, created on heap becasue they are needed to be accessed by other functions (callback functions) */
     if (num_segs!=0) {
         recv_array = (int *)malloc(sizeof(int) * num_segs);
     }
@@ -425,7 +438,7 @@ int mca_coll_adapt_ibcast_generic(void *buff, int count, struct ompi_datatype_t 
         send_array = (int *)malloc(sizeof(int) * tree->tree_nextsize);
     }
     
-    //Set constant context for send and recv call back
+    /* Set constant context for send and recv call back */
     mca_coll_adapt_constant_bcast_context_t *con = OBJ_NEW(mca_coll_adapt_constant_bcast_context_t);
     con->root = root;
     con->count = count;
@@ -449,9 +462,9 @@ int mca_coll_adapt_ibcast_generic(void *buff, int count, struct ompi_datatype_t 
     
     OPAL_THREAD_LOCK(mutex);
     
-    //if root, send segment to every children.
+    /* If the current process is root, it sends segment to every children */
     if (rank == root){
-        //handle the situation when num_segs < SEND_NUM
+        /* Handle the situation when num_segs < SEND_NUM */
         if (num_segs <= mca_coll_adapt_component.adapt_ibcast_max_send_requests) {
             min = num_segs;
         }
@@ -459,18 +472,19 @@ int mca_coll_adapt_ibcast_generic(void *buff, int count, struct ompi_datatype_t 
             min = mca_coll_adapt_component.adapt_ibcast_max_send_requests;
         }
         
-        //set recv_array, root has already had all the segments
+        /* Set recv_array, root has already had all the segments */
         for (i = 0; i < num_segs; i++) {
             recv_array[i] = i;
         }
         con->num_recv_segs = num_segs;
-        //set send_array, has not sent any segments
+        /* Set send_array, will send adapt_ibcast_max_send_requests segments */
         for (i = 0; i < tree->tree_nextsize; i++) {
             send_array[i] = mca_coll_adapt_component.adapt_ibcast_max_send_requests;
         }
         
         ompi_request_t *send_req;
-        int send_count = seg_count;             //number of datatype in each send
+        /* Number of datatypes in each send */
+        int send_count = seg_count;
         for (i = 0; i < min; i++) {
             if (i == (num_segs - 1)) {
                 send_count = count - i * seg_count;
@@ -479,8 +493,10 @@ int mca_coll_adapt_ibcast_generic(void *buff, int count, struct ompi_datatype_t 
                 mca_coll_adapt_bcast_context_t * context = (mca_coll_adapt_bcast_context_t *) opal_free_list_wait(mca_coll_adapt_component.adapt_ibcast_context_free_list);
                 context->buff = (char *)buff + i * real_seg_size;
                 context->frag_id = i;
-                context->child_id = j;              //the id of peer in in children_list
-                context->peer = tree->tree_next[j];   //the actural rank of the peer
+                /* The id of peer in in children_list */
+                context->child_id = j;
+                /* Actural rank of the peer */
+                context->peer = tree->tree_next[j];   
                 context->con = con;
                 OBJ_RETAIN(con);
 
@@ -490,7 +506,7 @@ int mca_coll_adapt_ibcast_generic(void *buff, int count, struct ompi_datatype_t 
                 if (MPI_SUCCESS != err) {
                     return err;
                 }
-                //invoke send call back
+                /* Invoke send call back */
                 OPAL_THREAD_UNLOCK(mutex);
                 ompi_request_set_callback(send_req, send_cb, context);
                 OPAL_THREAD_LOCK(mutex);
@@ -499,9 +515,9 @@ int mca_coll_adapt_ibcast_generic(void *buff, int count, struct ompi_datatype_t 
         
     }
     
-    //if not root, receive data from parent in the tree.
+    /* If the current process is not root, it receives data from parent in the tree. */
     else{
-        //handle the situation is num_segs < RECV_NUM
+        /* Handle the situation when num_segs < RECV_NUM */
         if (num_segs <= mca_coll_adapt_component.adapt_ibcast_max_recv_requests) {
             min = num_segs;
         }
@@ -509,19 +525,19 @@ int mca_coll_adapt_ibcast_generic(void *buff, int count, struct ompi_datatype_t 
             min = mca_coll_adapt_component.adapt_ibcast_max_recv_requests;
         }
         
-        //set recv_array, recv_array is empty
+        /* Set recv_array, recv_array is empty */
         for (i = 0; i < num_segs; i++) {
             recv_array[i] = 0;
         }
-        //set send_array to empty
+        /* Set send_array to empty */
         for (i = 0; i < tree->tree_nextsize ; i++) {
             send_array[i] = 0;
         }
         
-        //create a recv request
+        /* Create a recv request */
         ompi_request_t *recv_req;
         
-        //recevice some segments from its parent
+        /* Recevice some segments from its parent */
         int recv_count = seg_count;
         for (i = 0; i < min; i++) {
             if (i == (num_segs - 1)) {
@@ -539,7 +555,7 @@ int mca_coll_adapt_ibcast_generic(void *buff, int count, struct ompi_datatype_t 
             if (MPI_SUCCESS != err) {
                 return err;
             }
-            //invoke receive call back
+            /* Invoke receive call back */
             OPAL_THREAD_UNLOCK(mutex);
             ompi_request_set_callback(recv_req, recv_cb, context);
             OPAL_THREAD_LOCK(mutex);

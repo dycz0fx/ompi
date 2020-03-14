@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014      The University of Tennessee and The University
+ * Copyright (c) 2014-2020 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * $COPYRIGHT$
@@ -130,7 +130,7 @@ static int adapt_register(void)
 
     cs->adapt_context_free_list_min = 10;
     (void) mca_base_component_var_register(c, "context_free_list_max",
-                                           "Minimum number of segment in context free list",
+                                           "Minimum number of segments in context free list",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
@@ -138,7 +138,7 @@ static int adapt_register(void)
                                           
     cs->adapt_context_free_list_max = 10000;
     (void) mca_base_component_var_register(c, "context_free_list_min",
-                                           "Maximum number of segment in context free list",
+                                           "Maximum number of segments in context free list",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
@@ -146,7 +146,7 @@ static int adapt_register(void)
                                          
     cs->adapt_context_free_list_inc = 10;
     (void) mca_base_component_var_register(c, "context_free_list_inc",
-                                           "Increasement number of segment in context free list",
+                                           "Increasement number of segments in context free list",
                                            MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                                            OPAL_INFO_LVL_9,
                                            MCA_BASE_VAR_SCOPE_READONLY,
