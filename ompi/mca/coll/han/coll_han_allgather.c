@@ -73,6 +73,18 @@ mca_coll_han_allgather_intra(const void *sbuf, int scount,
     int low_rank = ompi_comm_rank(low_comm);
     int w_rank = ompi_comm_rank(comm);
 
+    /* Init topo */
+    int *topo = mca_coll_han_topo_init(comm, han_module, 2);
+
+    /* unbalanced case needs algo adaptation */
+    if (han_module->are_ppn_imbalanced){
+        OPAL_OUTPUT_VERBOSE((30, mca_coll_han_component.han_output,
+                             "han cannot handle allgather with this communicator. It need to fall back on another component\n"));
+        return han_module->previous_allgather(sbuf, scount, sdtype, rbuf,
+                                              rcount, rdtype,
+                                              comm, han_module->previous_allgather_module);
+    }
+
     ompi_request_t *temp_request = NULL;
     /* Set up request */
     temp_request = OBJ_NEW(ompi_request_t);
@@ -81,9 +93,6 @@ mca_coll_han_allgather_intra(const void *sbuf, int scount,
     temp_request->req_free = han_request_free;
     temp_request->req_status = (ompi_status_public_t){0};
     temp_request->req_complete = REQUEST_PENDING;
-
-    /* Init topo */
-    int *topo = mca_coll_han_topo_init(comm, han_module, 2);
 
     int root_low_rank = 0;
     /* Create lg (lower level gather) task */
